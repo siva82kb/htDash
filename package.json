@@ -1,0 +1,12 @@
+{
+  "name": "htdash",
+  "version": "1.0.0",
+  "description": "HOMER Therapy Dashboard - Server-side PDF rendering",
+  "main": "main.py",
+  "scripts": {
+    "install-puppeteer": "npm install"
+  },
+  "dependencies": {
+    "puppeteer": "^24.42.0"
+  }
+}

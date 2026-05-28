@@ -110,75 +110,44 @@ def save_vcg_prescription():
                 {"status": "error", "message": "Missing required fields"}
             ), 400
 
-        # Determine base path
         if current_session.is_admin():
             place = current_session.place_info.get(user_id, current_session.login_place)
-            base_path = os.path.join(Config.META_DATA_PATH, place, user_id)
         else:
-            base_path = os.path.join(
-                Config.META_DATA_PATH, current_session.login_place, user_id
-            )
+            place = current_session.login_place
 
-        # Create VCG folder
-        vcg_folder = os.path.join(base_path, "vcg_prescriptions")
-        os.makedirs(vcg_folder, exist_ok=True)
-
-        # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = os.path.join(vcg_folder, f"prescription_{timestamp}.json")
-
-        # Save to file
         prescription_data = {
             "user_id": user_id,
             "vcg_type": vcg_type,
             "selected_exercises": selected_exercises,
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "version": timestamp,
         }
 
-        with open(file_path, "w") as f:
-            json.dump(prescription_data, f, indent=2)
-
-        # Also save as latest.json for easy access
-        latest_path = os.path.join(vcg_folder, "latest.json")
-        shutil.copy2(file_path, latest_path)
-
-        # Upload to S3
-        if current_session.is_admin():
-            place = current_session.place_info.get(user_id, current_session.login_place)
-            s3_key = (
-                f"{place}/{user_id}/vcg_prescriptions/prescription_{timestamp}.json"
-            )
-            s3_latest_key = f"{place}/{user_id}/vcg_prescriptions/latest.json"
+        if Config.USE_S3:
+            from utils.s3_store import s3_write_json
+            prefix = f"{place}/{user_id}/vcg_prescriptions"
+            s3_write_json(f"{prefix}/prescription_{timestamp}.json", prescription_data)
+            s3_write_json(f"{prefix}/latest.json", prescription_data)
         else:
-            s3_key = f"{current_session.login_place}/{user_id}/vcg_prescriptions/prescription_{timestamp}.json"
-            s3_latest_key = (
-                f"{current_session.login_place}/{user_id}/vcg_prescriptions/latest.json"
-            )
-
-        try:
-            # Upload timestamped version
-            command = [
-                "aws",
-                "s3",
-                "cp",
-                file_path,
-                f"s3://{Config.BUCKET_NAME}/{s3_key}",
-            ]
-            subprocess.run(command, capture_output=True, text=True)
-
-            # Upload latest version
-            command = [
-                "aws",
-                "s3",
-                "cp",
-                latest_path,
-                f"s3://{Config.BUCKET_NAME}/{s3_latest_key}",
-            ]
-            subprocess.run(command, capture_output=True, text=True)
-
-        except Exception as s3_error:
-            print(f"S3 upload error: {s3_error}")
+            base_path = os.path.join(Config.META_DATA_PATH, place, user_id)
+            vcg_folder = os.path.join(base_path, "vcg_prescriptions")
+            os.makedirs(vcg_folder, exist_ok=True)
+            file_path = os.path.join(vcg_folder, f"prescription_{timestamp}.json")
+            with open(file_path, "w") as f:
+                json.dump(prescription_data, f, indent=2)
+            shutil.copy2(file_path, os.path.join(vcg_folder, "latest.json"))
+            # Legacy S3 upload via CLI
+            try:
+                s3_prefix = f"{place}/{user_id}/vcg_prescriptions"
+                subprocess.run(["aws", "s3", "cp", file_path,
+                                f"s3://{Config.BUCKET_NAME}/{s3_prefix}/prescription_{timestamp}.json"],
+                               capture_output=True, text=True)
+                subprocess.run(["aws", "s3", "cp", os.path.join(vcg_folder, "latest.json"),
+                                f"s3://{Config.BUCKET_NAME}/{s3_prefix}/latest.json"],
+                               capture_output=True, text=True)
+            except Exception as s3_error:
+                print(f"S3 upload error: {s3_error}")
 
         return jsonify(
             {
@@ -200,73 +169,52 @@ def get_vcg_prescription(user_id):
         if not current_session.login_place:
             return jsonify({"status": "error", "message": "Not logged in"}), 401
 
-        # Determine file path
         if current_session.is_admin():
             place = current_session.place_info.get(user_id, current_session.login_place)
-            latest_path = os.path.join(
-                Config.META_DATA_PATH,
-                place,
-                user_id,
-                "vcg_prescriptions",
-                "latest.json",
-            )
-            vcg_folder = os.path.join(
-                Config.META_DATA_PATH, place, user_id, "vcg_prescriptions"
-            )
         else:
-            latest_path = os.path.join(
-                Config.META_DATA_PATH,
-                current_session.login_place,
-                user_id,
-                "vcg_prescriptions",
-                "latest.json",
-            )
-            vcg_folder = os.path.join(
-                Config.META_DATA_PATH,
-                current_session.login_place,
-                user_id,
-                "vcg_prescriptions",
-            )
+            place = current_session.login_place
 
-        if not os.path.exists(latest_path):
-            return jsonify(
-                {
-                    "status": "success",
-                    "has_prescription": False,
-                    "message": "No VCG prescription found",
-                }
-            )
+        if Config.USE_S3:
+            from utils.s3_store import s3_read_json, s3_list_prefix
+            s3_prefix = f"{place}/{user_id}/vcg_prescriptions"
+            prescription_data = s3_read_json(f"{s3_prefix}/latest.json")
+            if not prescription_data:
+                return jsonify({"status": "success", "has_prescription": False,
+                                "message": "No VCG prescription found"})
+            all_versions = []
+            for key in s3_list_prefix(s3_prefix + "/"):
+                fname = key.split("/")[-1]
+                if fname.startswith("prescription_") and fname.endswith(".json"):
+                    vdata = s3_read_json(key) or {}
+                    all_versions.append({
+                        "timestamp": vdata.get("version", fname.replace("prescription_","").replace(".json","")),
+                        "created_at": vdata.get("created_at", ""),
+                        "exercise_count": len(vdata.get("selected_exercises", [])),
+                    })
+        else:
+            latest_path = os.path.join(Config.META_DATA_PATH, place, user_id,
+                                       "vcg_prescriptions", "latest.json")
+            vcg_folder  = os.path.join(Config.META_DATA_PATH, place, user_id, "vcg_prescriptions")
 
-        with open(latest_path, "r") as f:
-            prescription_data = json.load(f)
+            if not os.path.exists(latest_path):
+                return jsonify({"status": "success", "has_prescription": False,
+                                "message": "No VCG prescription found"})
 
-        # Get all versions for history
-        all_versions = []
-        if os.path.exists(vcg_folder):
-            for file in os.listdir(vcg_folder):
-                if (
-                    file.startswith("prescription_")
-                    and file.endswith(".json")
-                    and file != "latest.json"
-                ):
-                    version_path = os.path.join(vcg_folder, file)
-                    with open(version_path, "r") as vf:
+            with open(latest_path, "r") as f:
+                prescription_data = json.load(f)
+
+            all_versions = []
+            if os.path.exists(vcg_folder):
+                for file in os.listdir(vcg_folder):
+                    if file.startswith("prescription_") and file.endswith(".json") and file != "latest.json":
                         try:
-                            version_data = json.load(vf)
-                            all_versions.append(
-                                {
-                                    "timestamp": version_data.get(
-                                        "version",
-                                        file.replace("prescription_", "").replace(
-                                            ".json", ""
-                                        ),
-                                    ),
-                                    "created_at": version_data.get("created_at", ""),
-                                    "exercise_count": len(
-                                        version_data.get("selected_exercises", [])
-                                    ),
-                                }
-                            )
+                            with open(os.path.join(vcg_folder, file)) as vf:
+                                version_data = json.load(vf)
+                            all_versions.append({
+                                "timestamp": version_data.get("version", file.replace("prescription_","").replace(".json","")),
+                                "created_at": version_data.get("created_at", ""),
+                                "exercise_count": len(version_data.get("selected_exercises", [])),
+                            })
                         except:
                             pass
 
@@ -334,125 +282,104 @@ def save_controller_exercises():
         else:
             place = current_session.login_place
 
-        base_path = os.path.join(Config.META_DATA_PATH, place, user_id)
+        prefix = "vcg" if exercise_type == "vcg" else "adl"
+        s3_folder = f"{place}/{user_id}/{exercise_type}_prescriptions"
+        latest_key = f"{s3_folder}/{prefix}_prescription_latest.json"
 
-        # Determine folder based on exercise type
-        if exercise_type == "vcg":
-            folder_path = os.path.join(base_path, "vcg_prescriptions")
-            prefix = "vcg"
-        else:
-            folder_path = os.path.join(base_path, "adl_prescriptions")
-            prefix = "adl"
-
-        os.makedirs(folder_path, exist_ok=True)
-
-        # If vcg_type is empty, try to get from existing prescription or patient data
+        # If vcg_type empty, try to load from existing latest
         if exercise_type == "vcg" and not vcg_type:
-            # Try to get from existing latest prescription
-            existing_latest = os.path.join(
-                folder_path, f"{prefix}_prescription_latest.json"
-            )
-            if os.path.exists(existing_latest):
-                with open(existing_latest, "r") as f:
-                    existing_data = json.load(f)
-                    if existing_data.get("vcg_type"):
-                        vcg_type = existing_data["vcg_type"]
-
-            # If still empty, try to get from patient details
+            if Config.USE_S3:
+                from utils.s3_store import s3_read_json as _srj
+                existing_latest_data = _srj(latest_key) or {}
+                vcg_type = existing_latest_data.get("vcg_type") or ""
+            else:
+                existing_local = os.path.join(Config.META_DATA_PATH, place, user_id,
+                                              f"{exercise_type}_prescriptions",
+                                              f"{prefix}_prescription_latest.json")
+                if os.path.exists(existing_local):
+                    try:
+                        with open(existing_local) as f:
+                            vcg_type = json.load(f).get("vcg_type") or ""
+                    except Exception:
+                        pass
             if not vcg_type:
                 try:
                     vcg_type = _get_user_vcg_type_helper(place, user_id)
                     if vcg_type:
                         vcg_type = _normalise_vcg_type(vcg_type)
-                except:
+                except Exception:
                     pass
-
-            # Default to VCG2 if nothing else works
             if not vcg_type:
                 vcg_type = "VCG2"
 
-        # Create timestamped filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         filename = f"{prefix}_prescription_{timestamp}.json"
-        file_path = os.path.join(folder_path, filename)
 
-        # Prepare prescription data
         prescription_data = {
             "user_id": user_id,
             "exercise_type": exercise_type,
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "created_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "exercises": selected_exercises,
         }
-
         if exercise_type == "vcg":
             prescription_data["vcg_type"] = vcg_type
 
-        # Preserve existing time records for all exercise types (vcg and adl)
-        existing_latest = os.path.join(
-            folder_path, f"{prefix}_prescription_latest.json"
-        )
-        if os.path.exists(existing_latest):
-            with open(existing_latest, "r") as f:
-                existing_data = json.load(f)
-                existing_exercises = existing_data.get("exercises", [])
+        # Merge existing timeRecords
+        if Config.USE_S3:
+            from utils.s3_store import s3_read_json, s3_write_json
+            existing_data = s3_read_json(latest_key) or {}
+        else:
+            existing_local = os.path.join(Config.META_DATA_PATH, place, user_id,
+                                          f"{exercise_type}_prescriptions",
+                                          f"{prefix}_prescription_latest.json")
+            existing_data = {}
+            if os.path.exists(existing_local):
+                try:
+                    with open(existing_local) as f:
+                        existing_data = json.load(f)
+                except Exception:
+                    pass
 
-                # Union-merge timeRecords: combine client records and file records,
-                # deduplicating by (date, startTime, endTime) so that neither a
-                # background save race nor a tab-reload causes data loss or duplication.
-                for new_ex in prescription_data.get("exercises", []):
-                    for existing_ex in existing_exercises:
-                        if new_ex.get("id") != existing_ex.get("id"):
-                            continue
-                        file_records = existing_ex.get("timeRecords") or []
-                        client_records = new_ex.get("timeRecords") or []
-                        if not file_records:
-                            break  # nothing on disk to merge in
-                        seen = {
-                            (r.get("date"), r.get("startTime"), r.get("endTime"))
-                            for r in client_records
-                        }
-                        for r in file_records:
-                            key = (r.get("date"), r.get("startTime"), r.get("endTime"))
-                            if key not in seen:
-                                client_records.append(r)
-                                seen.add(key)
-                        new_ex["timeRecords"] = client_records
-                        break
+        existing_exercises = existing_data.get("exercises", [])
+        for new_ex in prescription_data.get("exercises", []):
+            for existing_ex in existing_exercises:
+                if new_ex.get("id") != existing_ex.get("id"):
+                    continue
+                file_records = existing_ex.get("timeRecords") or []
+                client_records = new_ex.get("timeRecords") or []
+                if not file_records:
+                    break
+                seen = {(r.get("date"), r.get("startTime"), r.get("endTime")) for r in client_records}
+                for r in file_records:
+                    k = (r.get("date"), r.get("startTime"), r.get("endTime"))
+                    if k not in seen:
+                        client_records.append(r)
+                        seen.add(k)
+                new_ex["timeRecords"] = client_records
+                break
 
-        # Save to file (always - even for deletes to update latest)
-        with open(file_path, "w") as f:
-            json.dump(prescription_data, f, indent=2)
-
-        # Always save a latest copy for easy access
-        latest_file = os.path.join(folder_path, f"{prefix}_prescription_latest.json")
-        with open(latest_file, "w") as f:
-            json.dump(prescription_data, f, indent=2)
-
-        # Upload to S3 — place is already resolved above
-        s3_folder = f"{place}/{user_id}/{exercise_type}_prescriptions"
-
-        # Upload the timestamped file
-        try:
-            command = [
-                "aws",
-                "s3",
-                "cp",
-                file_path,
-                f"s3://{Config.BUCKET_NAME}/{s3_folder}/{filename}",
-            ]
-            subprocess.run(command, capture_output=True, text=True)
-
-            # Upload latest file
-            command_latest = [
-                "aws",
-                "s3",
-                "cp",
-                latest_file,
-                f"s3://{Config.BUCKET_NAME}/{s3_folder}/{prefix}_prescription_latest.json",
-            ]
-            subprocess.run(command_latest, capture_output=True, text=True)
-        except Exception as s3_error:
-            print(f"S3 upload error: {s3_error}")
+        if Config.USE_S3:
+            s3_write_json(f"{s3_folder}/{filename}", prescription_data)
+            s3_write_json(latest_key, prescription_data)
+        else:
+            folder_path = os.path.join(Config.META_DATA_PATH, place, user_id,
+                                       f"{exercise_type}_prescriptions")
+            os.makedirs(folder_path, exist_ok=True)
+            file_path = os.path.join(folder_path, filename)
+            with open(file_path, "w") as f:
+                json.dump(prescription_data, f, indent=2)
+            latest_file = os.path.join(folder_path, f"{prefix}_prescription_latest.json")
+            with open(latest_file, "w") as f:
+                json.dump(prescription_data, f, indent=2)
+            try:
+                subprocess.run(["aws", "s3", "cp", file_path,
+                                f"s3://{Config.BUCKET_NAME}/{s3_folder}/{filename}"],
+                               capture_output=True, text=True)
+                subprocess.run(["aws", "s3", "cp", latest_file,
+                                f"s3://{Config.BUCKET_NAME}/{s3_folder}/{prefix}_prescription_latest.json"],
+                               capture_output=True, text=True)
+            except Exception as s3_error:
+                print(f"S3 upload error: {s3_error}")
 
         return jsonify(
             {

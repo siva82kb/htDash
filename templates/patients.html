@@ -1,0 +1,215 @@
+{% extends 'base.html' %}
+
+{% block title %}Patients{% endblock %}
+{% block page_title %}Patients{% endblock %}
+{% block page_subtitle %}Manage enrolled patients{% endblock %}
+
+{% block page_actions %}
+<div class="flex items-center gap-3">
+  <button id="add-patient-btn"
+          onclick="showAddPatientModal()"
+          class="hidden flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 font-medium shadow-md shadow-blue-200 hover:shadow-lg active:scale-95 transition-all duration-200">
+    <i class="fas fa-user-plus text-sm"></i>Add Patient
+  </button>
+  <button onclick="loadPatients()"
+          class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50">
+    <i class="fas fa-sync-alt text-sm"></i><span>Refresh</span>
+  </button>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="flex-1 flex flex-col min-h-0 overflow-hidden gap-4">
+
+  <!-- Search + Filter row -->
+  <div class="flex flex-col sm:flex-row gap-3 flex-shrink-0">
+    <div class="relative flex-1">
+      <i class="fas fa-search absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-sm"></i>
+      <input id="patient-search"
+             type="text"
+             placeholder="Search by Homer ID or Hospital ID…"
+             oninput="renderPatients()"
+             class="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+  </div>
+
+  <!-- Filter tabs -->
+  <div class="flex flex-wrap gap-2 flex-shrink-0">
+    <button data-filter="all"              class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('all')">
+      All <span id="count-all" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="unassigned"       class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('unassigned')">
+      Unassigned <span id="count-unassigned" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="inactive"         class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('inactive')">
+      Inactive <span id="count-inactive" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="active"           class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('active')">
+      Active <span id="count-active" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="paused"           class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('paused')">
+      Paused <span id="count-paused" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="post_training"    class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('post_training')">
+      Post Training <span id="count-post-training" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="training_completed" class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('training_completed')">
+      Training Complete <span id="count-training-completed" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="a1_completed"     class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('a1_completed')">
+      A1 Complete <span id="count-a1-completed" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="pre_discontinued" class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('pre_discontinued')">
+      Pre-Discontinued <span id="count-pre-discontinued" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="broken_protocol"  class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('broken_protocol')">
+      Broken Protocol <span id="count-broken-protocol" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="discontinued"     class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('discontinued')">
+      Discontinued <span id="count-discontinued" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+    <button data-filter="all_completed"    class="filter-btn px-3 py-1.5 text-sm font-medium rounded-xl border transition-all duration-150" onclick="filterPatients('all_completed')">
+      All Complete <span id="count-all-completed" class="ml-1 text-xs font-bold opacity-70">0</span>
+    </button>
+  </div>
+
+  <!-- Patient list -->
+  <div id="patient-list" class="flex-1 overflow-y-auto space-y-3 min-h-0">
+    <div class="text-center py-12 text-slate-500">
+      <i class="fas fa-spinner fa-spin text-2xl"></i>
+    </div>
+  </div>
+
+</div>
+
+<!-- Add Patient Modal -->
+<div id="add-patient-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+    <div class="flex items-center justify-between mb-6">
+      <h3 class="text-xl font-bold text-slate-800">Add New Patient</h3>
+      <button onclick="hideAddPatientModal()" class="text-slate-400 hover:text-slate-600">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+    <form id="add-patient-form" class="space-y-4" onsubmit="submitAddPatient(event)">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">Hospital Patient ID</label>
+        <input type="text" id="new-hospital-id" required
+               class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
+               placeholder="e.g. RP-HS-042">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">Training Side</label>
+        <input type="hidden" id="new-training-side" value="">
+        <div class="flex gap-3">
+          <button type="button" id="side-left-btn"
+                  onclick="selectTrainingSide('Left')"
+                  class="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition-colors">
+            Left
+          </button>
+          <button type="button" id="side-right-btn"
+                  onclick="selectTrainingSide('Right')"
+                  class="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition-colors">
+            Right
+          </button>
+        </div>
+      </div>
+      <p id="add-patient-error" class="text-sm text-red-500 hidden"></p>
+      <div class="flex gap-3 pt-2">
+        <button type="button" onclick="hideAddPatientModal()"
+                class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">
+          Cancel
+        </button>
+        <button type="submit" id="add-patient-submit"
+                class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">
+          Create Patient
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+<!-- Assign Group Modal -->
+<div id="assign-group-modal" class="fixed inset-0 bg-black/50 z-50 hidden flex items-center justify-center p-4">
+  <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+    <div class="flex items-center justify-between mb-6">
+      <h3 class="text-xl font-bold text-slate-800">Assign Group</h3>
+      <button onclick="hideAssignGroupModal()" class="text-slate-400 hover:text-slate-600">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+    <div class="mb-4 px-4 py-3 bg-slate-50 rounded-xl">
+      <p class="text-xs text-slate-500 font-medium mb-0.5">Patient</p>
+      <p id="assign-group-homer-id" class="text-base font-semibold text-slate-800"></p>
+    </div>
+    <div class="mb-5">
+      <label class="block text-sm font-medium text-slate-700 mb-3">Assign to Group</label>
+      <input type="hidden" id="assign-group-value" value="">
+      <div class="flex gap-3">
+        <button type="button" id="group-experimental-btn"
+                onclick="selectGroup('experimental')"
+                class="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition-colors">
+          <i class="fas fa-robot mr-2 text-blue-400"></i>Experimental
+        </button>
+        <button type="button" id="group-control-btn"
+                onclick="selectGroup('control')"
+                class="flex-1 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-100 transition-colors">
+          <i class="fas fa-user-check mr-2 text-violet-400"></i>Control
+        </button>
+      </div>
+    </div>
+    <div class="mb-5">
+      <label class="block text-sm font-medium text-slate-700 mb-2">A0 Assessment Date <span class="text-red-500">*</span></label>
+      <input type="datetime-local" id="assign-group-a0-date" required
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <p id="assign-group-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideAssignGroupModal()"
+              class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">
+        Cancel
+      </button>
+      <button type="button" id="assign-group-submit" onclick="submitAssignGroup()"
+              class="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700">
+        Assign
+      </button>
+    </div>
+  </div>
+</div>
+<!-- Pre-Discontinue Modal -->
+<div id="pre-dc-modal" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Pre-Discontinue Patient</h3>
+      <button onclick="hidePreDiscontinueModal()" class="text-slate-400 hover:text-slate-600">
+        <i class="fas fa-times text-lg"></i>
+      </button>
+    </div>
+    <div class="mb-5 px-4 py-3 bg-orange-50 border border-orange-200 rounded-xl">
+      <p class="text-xs text-orange-600 font-medium mb-0.5">Patient</p>
+      <p id="pre-dc-homer-id" class="text-base font-semibold text-slate-800"></p>
+    </div>
+    <p class="text-sm text-slate-600 mb-4">This will mark the patient as <strong>pre-discontinued</strong> before group assignment. This action cannot be undone without admin intervention.</p>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Reason / Comments <span class="text-red-500">*</span></label>
+      <textarea id="pre-dc-reason" rows="3" required
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
+                placeholder="Enter reason for pre-discontinuation…"></textarea>
+    </div>
+    <p id="pre-dc-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hidePreDiscontinueModal()"
+              class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">
+        Cancel
+      </button>
+      <button type="button" id="pre-dc-submit" onclick="submitPreDiscontinue()"
+              class="flex-1 px-4 py-3 bg-orange-500 text-white rounded-xl font-medium hover:bg-orange-600">
+        Confirm
+      </button>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/app/patients_page.js') }}"></script>
+{% endblock %}

@@ -1,0 +1,541 @@
+{
+  "config": {
+    "max_cumulative_pause_days": 10
+  },
+  "experimental": [
+    {
+      "id": "exp_device_install",
+      "name": "Device Installation + Demo",
+      "type": "strict",
+      "reference": "assignment",
+      "is_master": false,
+      "window": {
+        "start_day": 1,
+        "end_day": 5
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "activation",
+      "name": "Patient Activation",
+      "type": "strict",
+      "reference": "assignment",
+      "is_master": true,
+      "window": {
+        "start_day": 1,
+        "end_day": 5
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "exp_device_install"
+      ]
+    },
+    {
+      "id": "robot_issue_call",
+      "name": "Robot Issue \u2014 Engineer Call",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "robot_issue_visit",
+      "name": "Robot Issue \u2014 Engineer Visit",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "resolve_robot_issue_visit",
+      "name": "Robot Issue \u2014 Replacement Visit",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "other_device_issue_call",
+      "name": "Other Device Issue \u2014 Engineer Call",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "other_device_issue_visit",
+      "name": "Other Device Issue \u2014 Engineer Visit",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "prescription_printout_d01",
+      "name": "Therapy Prescription Printout",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 1,
+        "end_day": 1
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "adl_prescription_d01"
+      ]
+    },
+    {
+      "id": "prescription_printout_d15",
+      "name": "Revised Therapy Prescription Printout",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 15,
+        "end_day": 15
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "adl_prescription_d15"
+      ]
+    },
+    {
+      "id": "agwatch_timing_d03",
+      "name": "AG Watch Timings Day 03",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 3,
+        "end_day": 3
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "home_visit_d03"
+      ]
+    },
+    {
+      "id": "agwatch_timing_d15",
+      "name": "AG Watch Timings Day 15",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 15,
+        "end_day": 15
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "home_visit_d15",
+        "adl_prescription_d15"
+      ]
+    }
+  ],
+  "control": [
+    {
+      "id": "activation",
+      "name": "Patient Activation",
+      "type": "strict",
+      "reference": "assignment",
+      "is_master": true,
+      "window": {
+        "start_day": 1,
+        "end_day": 5
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "vcg_prescription_d01",
+      "name": "VCG Exercise Prescription",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 1,
+        "end_day": 1
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "activation"
+      ]
+    },
+    {
+      "id": "vcg_prescription_d15",
+      "name": "VCG Exercise Prescription Revision",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 15,
+        "end_day": 15
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "home_visit_d15"
+      ]
+    },
+    {
+      "id": "prescription_printout_d01",
+      "name": "Therapy Prescription Printout",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 1,
+        "end_day": 1
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "adl_prescription_d01",
+        "vcg_prescription_d01"
+      ]
+    },
+    {
+      "id": "prescription_printout_d15",
+      "name": "Revised Therapy Prescription Printout",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 15,
+        "end_day": 15
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "adl_prescription_d15",
+        "vcg_prescription_d15"
+      ]
+    },
+    {
+      "id": "agwatch_timing_d03",
+      "name": "AG Watch Timings Day 03",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 3,
+        "end_day": 3
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "home_visit_d03",
+        "vcg_prescription_d01"
+      ]
+    },
+    {
+      "id": "agwatch_timing_d15",
+      "name": "AG Watch Timings Day 15",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 15,
+        "end_day": 15
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "home_visit_d15",
+        "adl_prescription_d15",
+        "vcg_prescription_d15"
+      ]
+    }
+  ],
+  "shared": [
+    {
+      "id": "adl_prescription_d01",
+      "name": "ADL Exercise Prescription",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 1,
+        "end_day": 1
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "activation"
+      ]
+    },
+    {
+      "id": "home_visit_d02",
+      "name": "Home Visit Day 02",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 2,
+        "end_day": 2
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "home_visit_d03",
+      "name": "Home Visit Day 03",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 3,
+        "end_day": 3
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "followup_call_d07",
+      "name": "Follow-up Phone Call Day 07",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 7,
+        "end_day": 7
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "home_visit_d15",
+      "name": "Home Visit Day 15",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 15,
+        "end_day": 15
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "adl_prescription_d15",
+      "name": "ADL Exercise Prescription Revision",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 15,
+        "end_day": 15
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "home_visit_d15"
+      ]
+    },
+    {
+      "id": "followup_call_d21",
+      "name": "Follow-up Phone Call Day 21",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 21,
+        "end_day": 21
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "training_completion_d29",
+      "name": "Training Completion Day 29",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 29,
+        "end_day": 29
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "a1_assessment",
+      "name": "A1 Assessment",
+      "type": "windowed",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 30,
+        "end_day": 37
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "a2_assessment",
+      "name": "A2 Assessment",
+      "type": "windowed",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 180,
+        "end_day": 187
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "watch_record",
+      "name": "Watch Record",
+      "type": "chained",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "adverse_event",
+      "name": "File Adverse Event",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "adverse_event_followup",
+      "name": "Adverse Event Follow-up Call",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "adverse_event_followup_visit",
+      "name": "Adverse Event Follow-up Visit",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": true,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "adverse_event_clinical_visit",
+      "name": "Adverse Event Clinical Visit",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": true,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "patient_call",
+      "name": "Patient Call",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": true,
+      "depends_on": []
+    },
+    {
+      "id": "pre_discontinuation",
+      "name": "Pre-Discontinuation",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "discontinuation",
+      "name": "Discontinuation",
+      "type": "anytime",
+      "reference": null,
+      "is_master": false,
+      "window": null,
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
+    {
+      "id": "agwatch_timing_d01",
+      "name": "AG Watch Timings Day 01",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 1,
+        "end_day": 1
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "activation",
+        "watch_record"
+      ]
+    },
+    {
+      "id": "agwatch_timing_d02",
+      "name": "AG Watch Timings Day 02",
+      "type": "point_in_time",
+      "reference": "activation",
+      "is_master": false,
+      "window": {
+        "start_day": 2,
+        "end_day": 2
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": [
+        "home_visit_d02"
+      ]
+    }
+  ]
+}

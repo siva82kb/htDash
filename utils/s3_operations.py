@@ -39,7 +39,7 @@ class S3Operations:
                 utc_time = datetime.fromisoformat(utc_time_str.replace("Z", "+00:00"))
                 ist_timezone = pytz.timezone("Asia/Kolkata")
                 last_modified_ist = utc_time.astimezone(ist_timezone)
-                return last_modified_ist.strftime("%Y-%m-%d %H:%M:%S")
+                return last_modified_ist.strftime("%Y-%m-%dT%H:%M:%S")
         except Exception as e:
             print(f"Error getting last modified: {e}")
         return None
@@ -67,7 +67,7 @@ class S3Operations:
                         utc_time = datetime.fromisoformat(last_modified_utc.replace("Z", "+00:00"))
                         ist_timezone = pytz.timezone("Asia/Kolkata")
                         last_modified_ist = utc_time.astimezone(ist_timezone)
-                        return last_modified_ist.strftime("%Y-%m-%d %H:%M:%S")
+                        return last_modified_ist.strftime("%Y-%m-%dT%H:%M:%S")
         except Exception as e:
             print(f"Error getting Actilife last modified: {e}")
         return None

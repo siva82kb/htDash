@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}HOMER{% endblock %} — HOMER Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <style>
+    html { font-size: 75.0%; }
+    body { font-family: 'Inter', sans-serif; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #f1f5f9; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+    .nav-item.active { background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%); color: white; box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4); }
+    .sidebar { transition: transform 0.3s ease-in-out; }
+  </style>
+  {% block head_extra %}{% endblock %}
+</head>
+<body class="bg-slate-50">
+
+  <!-- Mobile Header -->
+  <header class="lg:hidden fixed top-0 left-0 right-0 h-16 bg-white border-b border-slate-200 z-40 flex items-center px-4 shadow-sm">
+    <button class="p-2 -ml-2 rounded-lg hover:bg-slate-100" onclick="toggleSidebar()">
+      <i class="fas fa-bars text-slate-600 text-lg"></i>
+    </button>
+    <div class="flex items-center gap-2 ml-3">
+      <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-blue-700 rounded-lg flex items-center justify-center">
+        <i class="fas fa-heart text-white text-sm"></i>
+      </div>
+      <span class="font-bold text-slate-800">HOMER</span>
+    </div>
+  </header>
+
+  <!-- Sidebar Overlay (mobile) -->
+  <div id="sidebar-overlay" class="lg:hidden fixed inset-0 bg-black/50 z-40 hidden" onclick="toggleSidebar()"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="sidebar fixed top-0 left-0 z-50 h-full w-72 bg-gradient-to-b from-slate-900 to-slate-800 transform -translate-x-full lg:translate-x-0">
+
+    <!-- Logo -->
+    <div class="flex items-center gap-3 px-6 py-5 border-b border-slate-700/50">
+      <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-blue-600 rounded-xl flex items-center justify-center">
+        <i class="fas fa-heart text-white text-lg"></i>
+      </div>
+      <div>
+        <h1 class="text-xl font-bold text-white">HOMER</h1>
+        <p class="text-xs text-slate-400">Rehab Management</p>
+      </div>
+      <button onclick="toggleSidebar()" class="lg:hidden ml-auto text-slate-400">
+        <i class="fas fa-times"></i>
+      </button>
+    </div>
+
+    <!-- User Info -->
+    <div class="px-4 py-4 mx-4 mt-4 bg-slate-800/50 rounded-2xl border border-slate-700/50">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+          <span id="user-initials" class="text-sm font-semibold text-white">--</span>
+        </div>
+        <div class="flex-1 min-w-0">
+          <p id="user-name" class="text-sm font-medium text-white truncate">--</p>
+          <p id="user-place" class="text-xs text-slate-400">--</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Navigation -->
+    <nav class="mt-6 px-4 space-y-1">
+      <a href="/" class="nav-item {% if active_page == 'dashboard' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:bg-slate-700/50">
+        <i class="fas fa-th-large w-5"></i><span class="font-medium">Dashboard</span>
+      </a>
+      <a href="/patients" class="nav-item {% if active_page == 'patients' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:bg-slate-700/50">
+        <i class="fas fa-users w-5"></i><span class="font-medium">Patients</span>
+      </a>
+      <a href="/devices" class="nav-item {% if active_page == 'devices' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:bg-slate-700/50">
+        <i class="fas fa-mobile-alt w-5"></i><span class="font-medium">Devices</span>
+      </a>
+      <a href="/sims" id="nav-sims" class="nav-item {% if active_page == 'sims' %}active{% endif %} flex items-center gap-3 px-4 py-3 rounded-xl text-slate-300 hover:bg-slate-700/50 hidden">
+        <i class="fas fa-sim-card w-5"></i><span class="font-medium">SIM Cards</span>
+      </a>
+    </nav>
+
+    <!-- Logout -->
+    <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-slate-700/50">
+      <button onclick="logout()" class="flex items-center gap-3 w-full px-4 py-3 rounded-xl text-red-400 hover:bg-red-500/10">
+        <i class="fas fa-sign-out-alt w-5"></i><span class="font-medium">Sign Out</span>
+      </button>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="lg:ml-72 pt-16 lg:pt-0 h-screen flex flex-col overflow-hidden">
+    <div class="p-6 lg:p-8 flex-1 flex flex-col overflow-hidden min-h-0">
+
+      <!-- Page Header -->
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6 flex-shrink-0">
+        <div>
+          <h1 class="text-2xl lg:text-3xl font-bold text-slate-800">{% block page_title %}{% endblock %}</h1>
+          <p class="text-slate-500 mt-1">{% block page_subtitle %}{% endblock %}</p>
+        </div>
+        {% block page_actions %}
+        <button onclick="if(typeof refreshPage==='function') refreshPage(); else location.reload();"
+                class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50">
+          <i class="fas fa-sync-alt text-sm"></i><span>Refresh</span>
+        </button>
+        {% endblock %}
+      </div>
+
+      {% block content %}{% endblock %}
+
+    </div>
+  </main>
+
+  <script>const USE_LOCAL_STORAGE = {{ use_local_storage | tojson }};</script>
+  <script src="{{ url_for('static', filename='js/app/app.js') }}?v={{ js_version }}"></script>
+  {% block scripts %}{% endblock %}
+
+</body>
+</html>

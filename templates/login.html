@@ -9,6 +9,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
+    html { font-size: 75.0%; }
     body { font-family: 'Inter', sans-serif; }
     .glassmorph {
       background: rgba(255, 255, 255, 0.95);
@@ -249,15 +250,7 @@
         const data = await response.json();
 
         if (data.status === 'success') {
-          // Store user info
-          localStorage.setItem('user', JSON.stringify({
-            loginId: data.loginid,
-            place: data.place,
-            privilege: data.privilege
-          }));
-          
-          // Redirect to dashboard
-          window.location.href = '/dashboard';
+          window.location.href = '/';
         } else {
           throw new Error(data.message || 'Invalid credentials');
         }
@@ -274,11 +267,6 @@
       }
     });
 
-    // Check if already logged in
-    const user = localStorage.getItem('user');
-    if (user) {
-      window.location.href = '/dashboard';
-    }
   </script>
 </body>
 </html>

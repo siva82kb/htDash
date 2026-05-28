@@ -1,0 +1,2256 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ homer_id }}{% endblock %}
+{% block page_title %}{{ homer_id }}{% endblock %}
+{% block page_subtitle %}<span id="patient-subtitle" class="text-slate-500">Loading…</span>{% endblock %}
+
+{% block page_actions %}
+<div class="flex items-center gap-3">
+  <a href="/patients"
+     class="flex items-center gap-2 px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-colors">
+    <i class="fas fa-arrow-left text-sm"></i><span>Patients</span>
+  </a>
+</div>
+{% endblock %}
+
+{% block content %}
+{% macro attachment_section(prefix) %}
+<div class="border-t border-slate-100 pt-3 space-y-2">
+  <label class="block text-sm font-medium text-slate-700">Attachment <span class="text-slate-400 font-normal">(optional, PDF only)</span></label>
+  <input type="file" id="{{ prefix }}-attachment-file" accept=".pdf"
+    class="w-full text-sm text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-slate-100 file:text-slate-600 hover:file:bg-slate-200 cursor-pointer">
+  <label class="block text-xs text-slate-500 mt-0.5">Attachment Description <span class="text-slate-400 font-normal">(required if file selected)</span></label>
+  <textarea id="{{ prefix }}-attachment-caption" rows="2" disabled
+    class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none disabled:opacity-50 disabled:cursor-not-allowed disabled:bg-slate-100"
+    placeholder="Describe this attachment…"></textarea>
+</div>
+{% endmacro %}
+<div class="flex-1 flex flex-col min-h-0 overflow-hidden">
+
+  <!-- Tab bar -->
+  <div class="relative border-b border-slate-200 flex-shrink-0">
+    <div class="flex gap-0 overflow-x-auto pr-64">
+      <button data-tab="overview"      onclick="switchTab('overview')"      class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-home mr-1.5"></i>Overview
+      </button>
+      <button data-tab="devices"       onclick="switchTab('devices')"       class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-mobile-alt mr-1.5"></i>Devices
+      </button>
+      <button id="tab-btn-vcg" data-tab="vcg" onclick="switchTab('vcg')"   class="tab-btn hidden whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-heartbeat mr-1.5"></i>VCG
+      </button>
+      <button data-tab="adl"           onclick="switchTab('adl')"           class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-dumbbell mr-1.5"></i>ADL
+      </button>
+      <button data-tab="calls"         onclick="switchTab('calls')"         class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-phone mr-1.5"></i>Call Logs
+      </button>
+      <button data-tab="adverse"       onclick="switchTab('adverse')"       class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-exclamation-triangle mr-1.5"></i>Adverse Events
+      </button>
+      <button data-tab="watch-records" onclick="switchTab('watch-records')" class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-clock mr-1.5"></i>Watch Records
+      </button>
+      <button id="tab-btn-device-issues" data-tab="device-issues" onclick="switchTab('device-issues')" class="tab-btn hidden whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-screwdriver-wrench mr-1.5"></i>Device Issues
+      </button>
+      <button data-tab="timeline"      onclick="switchTab('timeline')"      class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-calendar-alt mr-1.5"></i>Timeline
+      </button>
+      <button data-tab="notes"         onclick="switchTab('notes')"         class="tab-btn whitespace-nowrap px-5 py-3 text-sm font-medium border-b-2 -mb-px transition-colors">
+        <i class="fas fa-sticky-note mr-1.5"></i>Notes
+      </button>
+    </div>
+    <!-- Persistent action buttons -->
+    <div class="absolute right-0 top-0 bottom-0 flex items-center gap-2 px-4 bg-white">
+      <button id="log-call-btn" onclick="openPatientCallModal()"
+        class="hidden items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
+        <i class="fas fa-phone-alt text-[11px]"></i> Patient Call
+      </button>
+
+      <button id="discontinue-btn" onclick="_initiateDiscontinuation()"
+        class="hidden items-center gap-1.5 px-3 py-1.5 bg-red-600 text-white rounded-lg text-xs font-medium hover:bg-red-700">
+        <i class="fas fa-ban text-[11px]"></i> Discontinue Patient
+      </button>
+    </div>
+  </div>
+
+  <!-- Tab content -->
+  <div class="flex-1 flex flex-col min-h-0 pt-4">
+
+    <!-- ── Overview ────────────────────────────────────────────────────────── -->
+    <div id="tab-overview" class="tab-pane flex flex-col flex-1 min-h-0 gap-4">
+
+      <!-- Training period expiry banner (shown when Day 28 passed and D29 not yet filed) -->
+      <div id="training-period-expiry-banner" class="hidden flex-shrink-0 bg-sky-50 border border-sky-300 rounded-2xl px-5 py-3">
+        <div class="flex items-center gap-3">
+          <i class="fas fa-flag text-sky-600"></i>
+          <p class="text-sm font-medium text-sky-800">Training period has ended (Day 28 passed). Training completion (D29) can be filed when ready.</p>
+        </div>
+      </div>
+
+      <!-- Pause alert banner (shown only when status = paused) -->
+      <div id="pause-banner" class="hidden flex-shrink-0 bg-amber-50 border border-amber-300 rounded-2xl px-5 py-4">
+        <div class="flex items-start gap-4">
+          <div class="flex-shrink-0 w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+            <i class="fas fa-pause-circle text-amber-600 text-xl"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <div class="flex items-center gap-3 mb-1">
+              <p class="text-sm font-bold text-amber-800">Training Paused</p>
+              <div id="pause-reason-pills" class="flex gap-2"></div>
+            </div>
+            <p class="text-xs text-amber-700 mb-2">
+              Paused since: <span id="pause-since" class="font-semibold">—</span>
+              &nbsp;·&nbsp;
+              Days paused so far: <span id="pause-days-label" class="font-semibold">—</span> / 10
+            </p>
+            <!-- Segmented progress bar: one slice per closed epoch + current epoch -->
+            <div id="pause-bar-container" class="w-full bg-amber-100 rounded-full h-2 flex overflow-hidden"></div>
+            <div class="flex gap-4 mt-1.5">
+              <span class="flex items-center gap-1 text-xs text-slate-500">
+                <span class="inline-block w-2.5 h-2 rounded-sm bg-amber-500 flex-shrink-0"></span>
+                Prior epochs: <span id="pause-prior-days" class="font-medium text-slate-600">0</span>d
+              </span>
+              <span class="flex items-center gap-1 text-xs text-slate-500">
+                <span class="inline-block w-2.5 h-2 rounded-sm bg-orange-300 flex-shrink-0"></span>
+                Current epoch: <span id="pause-current-days" class="font-medium text-slate-600">0</span>d
+              </span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- D02/D03 at-risk banner (shown when paused and D02/D03 window has passed) -->
+      <div id="d0203-atrisk-banner" class="hidden flex-shrink-0 bg-orange-50 border border-orange-300 rounded-2xl px-5 py-3 flex items-center gap-3">
+        <i class="fas fa-exclamation-triangle text-orange-500 flex-shrink-0 text-xl"></i>
+        <span class="text-sm font-semibold text-orange-800" id="d0203-atrisk-msg"></span>
+      </div>
+
+      <!-- Discontinued read-only banner (shown only when discontinuationDate is set) -->
+      <div id="discontinued-readonly-banner" class="hidden flex-shrink-0 bg-red-50 border border-red-200 rounded-2xl px-5 py-3 flex items-center gap-3">
+        <i class="fas fa-lock text-red-500 flex-shrink-0 text-xl"></i>
+        <span class="text-sm font-semibold text-red-700">Patient is discontinued — record is read-only. No further changes are allowed.</span>
+      </div>
+
+      <!-- Patient info · Devices · Key dates · Days counter (flex so hidden items collapse) -->
+      <div class="flex gap-4 flex-shrink-0">
+
+        <!-- Patient Info -->
+        <div class="flex-[2] bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Patient Info</h3>
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Homer ID</p>
+              <p id="info-homer-id" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Hospital ID</p>
+              <p id="info-hospital-id" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Group</p>
+              <p id="info-group" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Training Side</p>
+              <p id="info-training-side" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Status</p>
+              <p id="info-status" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Enrolment Date</p>
+              <p id="info-enroll-date" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Assigned Devices (hidden when no open assignments) -->
+        <div id="overview-devices-section" class="hidden flex-[1.5] bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Assigned Devices</h3>
+          <div id="overview-devices-content"></div>
+        </div>
+
+        <!-- Key Dates -->
+        <div class="flex-[2] bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+          <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Key Dates</h3>
+          <div class="grid grid-cols-3 gap-4">
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">A0 Assessment</p>
+              <p id="date-a0" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Activation</p>
+              <p id="date-activation" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Training Completion</p>
+              <p id="date-training" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">A1 Assessment</p>
+              <p id="date-a1" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div>
+              <p class="text-xs text-slate-400 font-medium mb-0.5">A2 Assessment</p>
+              <p id="date-a2" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+            <div id="date-discontinuation-row" class="hidden">
+              <p class="text-xs text-slate-400 font-medium mb-0.5">Discontinuation</p>
+              <p id="date-discontinuation" class="text-sm font-semibold text-slate-800">—</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Days counter -->
+        <div id="days-card" class="hidden flex-[1] bg-white rounded-2xl p-5 shadow-sm border border-slate-100 flex flex-col">
+          <h3 id="days-elapsed-label" class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Days Since Recruitment</h3>
+          <div class="flex-1 flex items-center justify-center">
+            <p id="days-elapsed-number" class="text-8xl font-black text-slate-800 leading-none"></p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Pause history (shown only when pauseHistory is non-empty) -->
+      <div id="pause-history-section" class="hidden flex-shrink-0 bg-white rounded-2xl p-5 shadow-sm border border-slate-100">
+        <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Pause History</h3>
+        <div id="pause-history-content"></div>
+      </div>
+
+      <!-- Completed / Overdue / Upcoming events (scrollable) -->
+      <div class="flex-1 overflow-y-auto min-h-0">
+        <div class="grid grid-cols-3 gap-4 pb-4">
+
+          <!-- Completed (timeline) -->
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <div class="flex items-center gap-2">
+                <i class="fas fa-check-circle text-green-500 text-sm"></i>
+                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Completed / Passed</h3>
+              </div>
+              <span id="patient-completed-count" class="text-xs font-bold bg-green-100 text-green-600 px-2 py-0.5 rounded-full">0</span>
+            </div>
+            <div id="patient-completed-events" class="p-4">
+              <div class="flex items-center justify-center py-6 text-slate-400">
+                <i class="fas fa-spinner fa-spin"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Overdue -->
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <div class="flex items-center gap-2">
+                <i class="fas fa-circle-exclamation text-red-500 text-sm"></i>
+                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Overdue</h3>
+              </div>
+              <div class="flex items-center gap-2">
+                <span id="patient-overdue-clock" class="text-xs text-slate-500 font-mono tabular-nums border border-slate-200 bg-slate-50 px-2 py-0.5 rounded-md"></span>
+                <span id="patient-overdue-count" class="text-xs font-bold bg-red-100 text-red-600 px-2 py-0.5 rounded-full">0</span>
+              </div>
+            </div>
+            <div id="patient-overdue-events" class="p-3 space-y-2">
+              <div class="flex items-center justify-center py-6 text-slate-400">
+                <i class="fas fa-spinner fa-spin"></i>
+              </div>
+            </div>
+          </div>
+
+          <!-- Upcoming -->
+          <div class="bg-white rounded-2xl shadow-sm border border-slate-100 flex flex-col">
+            <div class="flex items-center justify-between px-5 py-3 border-b border-slate-100">
+              <div class="flex items-center gap-2">
+                <i class="fas fa-calendar-days text-blue-500 text-sm"></i>
+                <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Upcoming</h3>
+              </div>
+              <span id="patient-upcoming-count" class="text-xs font-bold bg-blue-100 text-blue-600 px-2 py-0.5 rounded-full">0</span>
+            </div>
+            <div id="patient-upcoming-events" class="p-3 space-y-2">
+              <div class="flex items-center justify-center py-6 text-slate-400">
+                <i class="fas fa-spinner fa-spin"></i>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Devices (activity graph) ────────────────────────────────────────── -->
+    <div id="tab-devices" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div id="devices-tab-content" class="p-4 space-y-6">
+        <div class="flex items-center justify-center py-10 text-slate-400">
+          <i class="fas fa-spinner fa-spin mr-2"></i><span>Loading…</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="tab-adl" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div id="adl-tab-content" class="space-y-4 pb-4">
+        <div class="flex items-center justify-center py-10 text-slate-400">
+          <i class="fas fa-spinner fa-spin mr-2"></i><span>Loading…</span>
+        </div>
+      </div>
+    </div>
+    <div id="tab-vcg" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div id="vcg-tab-content" class="space-y-4 pb-4">
+        <div class="flex items-center justify-center py-10 text-slate-400">
+          <i class="fas fa-spinner fa-spin mr-2"></i><span>Loading…</span>
+        </div>
+      </div>
+    </div>
+    <div id="tab-timeline" class="tab-pane hidden flex flex-col flex-1 min-h-0">
+      <div id="timeline-tab-content" class="flex-1 min-h-0">
+        <div class="flex items-center justify-center py-10 text-slate-400">
+          <i class="fas fa-spinner fa-spin mr-2"></i><span>Loading…</span>
+        </div>
+      </div>
+    </div>
+    <div id="tab-adverse" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div id="adverse-events-content"></div>
+    </div>
+    <div id="tab-calls" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div id="call-logs-content"></div>
+    </div>
+    <div id="tab-watch-records" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div id="watch-records-content"></div>
+    </div>
+    <div id="tab-device-issues" class="tab-pane hidden flex-1 overflow-y-auto">
+      <div id="device-issues-content"></div>
+    </div>
+    <div id="tab-notes" class="tab-pane hidden flex-1 overflow-y-auto">
+      <style>
+        /* Restore rich-text rendering for note bodies (Tailwind preflight resets these) */
+        .note-rich { line-height: 1.5; }
+        .note-rich h1 { font-size: 1.25rem; font-weight: 700; margin: .5em 0 .25em; }
+        .note-rich h2 { font-size: 1.125rem; font-weight: 700; margin: .5em 0 .25em; }
+        .note-rich h3 { font-size: 1rem; font-weight: 600; margin: .5em 0 .25em; }
+        .note-rich p { margin: .35em 0; }
+        .note-rich ul { list-style: disc;    margin: .35em 0; padding-left: 1.5rem; }
+        .note-rich ol { list-style: decimal; margin: .35em 0; padding-left: 1.5rem; }
+        .note-rich li { margin: .15em 0; }
+        .note-rich strong, .note-rich b { font-weight: 700; }
+        .note-rich em, .note-rich i { font-style: italic; }
+        .note-rich u { text-decoration: underline; }
+        .note-rich a { color: #2563eb; text-decoration: underline; }
+        .note-rich blockquote { border-left: 3px solid #cbd5e1; padding-left: .75rem; color: #475569; margin: .5em 0; }
+      </style>
+      <div class="max-w-3xl mx-auto py-6 px-4">
+        <div class="flex items-center justify-between mb-4">
+          <h2 class="text-lg font-semibold text-slate-700">Notes</h2>
+          <button onclick="openNoteModal()"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-xs font-medium hover:bg-blue-700">
+            <i class="fas fa-plus text-[11px]"></i> Create Note
+          </button>
+        </div>
+        <div id="notes-content"></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ── Modals ──────────────────────────────────────────────────────────────── -->
+
+
+<!-- A1 Assessment -->
+<div id="a1-modal" data-date-error="a1-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Record A1 Assessment</h3>
+      <button onclick="hideModal('a1-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <!-- Cancellation section — shown only when a scheduled appointment exists -->
+    <div id="a1-cancel-section" class="hidden mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+      <p class="text-xs font-semibold text-red-700 mb-1">Scheduled appointment: <span id="a1-scheduled-date-display" class="font-normal"></span></p>
+      <label class="block text-xs font-medium text-red-700 mb-1 mt-2">Reason for cancellation <span class="text-red-500">*</span></label>
+      <input type="text" id="a1-cancel-reason" placeholder="e.g. Patient unavailable"
+             class="w-full px-3 py-2 bg-white border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-300 mb-2">
+      <button type="button" onclick="cancelAssessmentAppointment('a1')"
+              class="w-full px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
+        Cancel Scheduled Assessment
+      </button>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Assessment Date <span class="text-red-500">*</span></label>
+      <input type="datetime-local" id="a1-date" data-event-id="a1_assessment" required
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+    </div>
+    <!-- Out-of-ideal-window reason — revealed when a1-date falls outside the [AD+30, AD+37] ideal window. -->
+    <div id="a1-out-of-window-section" class="hidden mb-4 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl">
+      <p class="text-sm font-semibold text-amber-800 mb-1">
+        <i class="fas fa-exclamation-triangle mr-1"></i>Outside ideal A1 window
+      </p>
+      <p class="text-xs text-amber-700 mb-2">
+        The ideal A1 window is <span id="a1-window-display" class="font-medium"></span>. Please explain why this assessment is outside the window.
+      </p>
+      <label class="block text-xs font-medium text-amber-800 mb-1">Reason <span class="text-red-500">*</span></label>
+      <textarea id="a1-out-of-window-reason" rows="2"
+                class="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                placeholder="e.g. Patient unavailable on ideal window dates"></textarea>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+      <textarea id="a1-notes" rows="2"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
+                placeholder="Add any notes…"></textarea>
+    </div>
+    <p id="a1-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3 mb-2">
+      <button type="button" onclick="hideModal('a1-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Close</button>
+      <button type="button" id="a1-submit" onclick="saveA1Assessment()" class="flex-1 px-4 py-3 bg-violet-600 text-white rounded-xl font-medium hover:bg-violet-700">Record</button>
+    </div>
+    <button type="button" onclick="markAssessmentMissed('a1')" class="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-500 font-medium hover:bg-slate-50">Mark as Missed</button>
+  </div>
+</div>
+
+<!-- A2 Assessment -->
+<div id="a2-modal" data-date-error="a2-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Record A2 Assessment</h3>
+      <button onclick="hideModal('a2-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <!-- Cancellation section — shown only when a scheduled appointment exists -->
+    <div id="a2-cancel-section" class="hidden mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+      <p class="text-xs font-semibold text-red-700 mb-1">Scheduled appointment: <span id="a2-scheduled-date-display" class="font-normal"></span></p>
+      <label class="block text-xs font-medium text-red-700 mb-1 mt-2">Reason for cancellation <span class="text-red-500">*</span></label>
+      <input type="text" id="a2-cancel-reason" placeholder="e.g. Patient unavailable"
+             class="w-full px-3 py-2 bg-white border border-red-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-red-300 mb-2">
+      <button type="button" onclick="cancelAssessmentAppointment('a2')"
+              class="w-full px-3 py-2 bg-red-600 text-white rounded-lg text-sm font-medium hover:bg-red-700">
+        Cancel Scheduled Assessment
+      </button>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Assessment Date <span class="text-red-500">*</span></label>
+      <input type="datetime-local" id="a2-date" data-event-id="a2_assessment" required
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+    </div>
+    <!-- Out-of-ideal-window reason — revealed when a2-date falls outside the [AD+180, AD+187] ideal window. -->
+    <div id="a2-out-of-window-section" class="hidden mb-4 px-4 py-3 bg-amber-50 border border-amber-300 rounded-xl">
+      <p class="text-sm font-semibold text-amber-800 mb-1">
+        <i class="fas fa-exclamation-triangle mr-1"></i>Outside ideal A2 window
+      </p>
+      <p class="text-xs text-amber-700 mb-2">
+        The ideal A2 window is <span id="a2-window-display" class="font-medium"></span>. Please explain why this assessment is outside the window.
+      </p>
+      <label class="block text-xs font-medium text-amber-800 mb-1">Reason <span class="text-red-500">*</span></label>
+      <textarea id="a2-out-of-window-reason" rows="2"
+                class="w-full px-3 py-2 bg-white border border-amber-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none"
+                placeholder="e.g. Patient unavailable on ideal window dates"></textarea>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+      <textarea id="a2-notes" rows="2"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                placeholder="Add any notes…"></textarea>
+    </div>
+    <p id="a2-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3 mb-2">
+      <button type="button" onclick="hideModal('a2-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Close</button>
+      <button type="button" id="a2-submit" onclick="saveA2Assessment()" class="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700">Record</button>
+    </div>
+    <button type="button" onclick="markAssessmentMissed('a2')" class="w-full px-4 py-2.5 border border-slate-200 rounded-xl text-sm text-slate-500 font-medium hover:bg-slate-50">Mark as Missed</button>
+  </div>
+</div>
+
+<!-- Schedule A1 Call -->
+<div id="schedule-a1-call-modal" data-date-error="sa1-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Schedule A1 Assessment</h3>
+      <button onclick="hideModal('schedule-a1-call-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+      <p class="text-xs text-amber-700">This records a call made to schedule or reschedule the A1 assessment appointment.</p>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Call Date/Time <span class="text-red-500">*</span></label>
+      <input type="datetime-local" id="sa1-date" data-event-id="schedule_a1_call" required
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Duration (minutes) <span class="text-red-500">*</span></label>
+      <input type="number" id="sa1-duration" min="1" placeholder="e.g. 10"
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Notes <span class="text-red-500">*</span></label>
+      <textarea id="sa1-notes" rows="2"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500 resize-none"
+                placeholder="What was discussed; any prior scheduling context…"></textarea>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">New Appointment Date <span class="text-red-500">*</span></label>
+      <input type="date" id="sa1-appointment" required data-date-rule="scheduling"
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-500">
+    </div>
+    <p id="sa1-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('schedule-a1-call-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+      <button type="button" onclick="saveScheduleAssessmentCall('a1')" class="flex-1 px-4 py-3 bg-violet-600 text-white rounded-xl font-medium hover:bg-violet-700">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Schedule A2 Call -->
+<div id="schedule-a2-call-modal" data-date-error="sa2-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-sm w-full p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Schedule A2 Assessment</h3>
+      <button onclick="hideModal('schedule-a2-call-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="mb-4 px-4 py-3 bg-amber-50 border border-amber-200 rounded-xl">
+      <p class="text-xs text-amber-700">This records a call made to schedule or reschedule the A2 assessment appointment.</p>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Call Date/Time <span class="text-red-500">*</span></label>
+      <input type="datetime-local" id="sa2-date" data-event-id="schedule_a2_call" required
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Duration (minutes) <span class="text-red-500">*</span></label>
+      <input type="number" id="sa2-duration" min="1" placeholder="e.g. 10"
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Notes <span class="text-red-500">*</span></label>
+      <textarea id="sa2-notes" rows="2"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500 resize-none"
+                placeholder="What was discussed; any prior scheduling context…"></textarea>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">New Appointment Date <span class="text-red-500">*</span></label>
+      <input type="date" id="sa2-appointment" required data-date-rule="scheduling"
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-green-500">
+    </div>
+    <p id="sa2-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('schedule-a2-call-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+      <button type="button" onclick="saveScheduleAssessmentCall('a2')" class="flex-1 px-4 py-3 bg-green-600 text-white rounded-xl font-medium hover:bg-green-700">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Device Setup -->
+<div id="device-setup-modal" data-date-error="device-setup-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Device Setup</h3>
+      <button onclick="hideModal('device-setup-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="mb-4 px-4 py-3 bg-slate-50 rounded-xl">
+      <p class="text-xs text-slate-500 font-medium mb-0.5">Patient</p>
+      <p id="device-setup-homer-id" class="text-base font-semibold text-slate-800"></p>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Event Date <span class="text-red-500">*</span></label>
+      <input type="datetime-local" id="device-setup-date" required data-event-id="exp_device_install"
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Pluto Device <span class="text-red-500">*</span></label>
+      <select id="device-setup-pluto" required
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Mars Device <span class="text-red-500">*</span></label>
+      <select id="device-setup-mars" required
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Modem Device <span class="text-red-500">*</span></label>
+      <select id="device-setup-modem" required
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Laptop Device <span class="text-red-500">*</span></label>
+      <select id="device-setup-laptop" required
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">Loading…</option>
+      </select>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">SIM Card <span class="text-red-500">*</span></label>
+      <select id="device-setup-sim" required onchange="onSetupSimChange()"
+              class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+        <option value="">Loading…</option>
+      </select>
+      <p id="device-setup-sim-warning" class="hidden mt-1.5 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+        <i class="fas fa-exclamation-triangle mr-1"></i><span id="device-setup-sim-warning-text"></span>
+      </p>
+    </div>
+    <div class="mb-4 flex items-center gap-3">
+      <input type="checkbox" id="device-setup-demo" class="w-4 h-4 rounded accent-blue-600">
+      <label for="device-setup-demo" class="text-sm font-medium text-slate-700">Demo completed</label>
+    </div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Event Notes</label>
+      <textarea id="device-setup-notes" rows="3"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="Optional notes…"></textarea>
+    </div>
+    <div class="mb-4">{{ attachment_section('device-setup') }}</div>
+    <p id="device-setup-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('device-setup-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+      <button type="button" id="device-setup-submit" data-label="Confirm Setup" onclick="submitDeviceSetup()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Confirm Setup</button>
+    </div>
+  </div>
+</div>
+
+<!-- Activation -->
+<div id="activation-modal" data-date-error="activation-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">Patient Activation</h3>
+      <button onclick="hideModal('activation-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="mb-4 px-4 py-3 bg-slate-50 rounded-xl">
+      <p class="text-xs text-slate-500 font-medium mb-0.5">Patient</p>
+      <p id="activation-homer-id" class="text-base font-semibold text-slate-800"></p>
+    </div>
+
+    <!-- ── Was training completed? ───────────────────────────────────── -->
+    <div class="mb-5">
+      <p class="text-sm font-semibold text-slate-700 mb-2">Was training completed? <span class="text-red-500">*</span></p>
+      <div class="flex gap-2">
+        <button type="button" id="act-train-yes-btn"
+                onclick="_setActivationTrainingToggle(true)"
+                class="flex-1 px-4 py-2 rounded-xl border text-sm font-medium transition-colors border-slate-200 text-slate-600 hover:bg-slate-50">
+          Yes
+        </button>
+        <button type="button" id="act-train-no-btn"
+                onclick="_setActivationTrainingToggle(false)"
+                class="flex-1 px-4 py-2 rounded-xl border text-sm font-medium transition-colors border-slate-200 text-slate-600 hover:bg-slate-50">
+          No
+        </button>
+      </div>
+    </div>
+
+    <!-- ── YES: training completed ───────────────────────────────────── -->
+    <div id="act-training-yes-section" class="hidden">
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-slate-700 mb-2">Session Start <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="activation-session-start" data-event-id="activation"
+               class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-slate-700 mb-2">Session End <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="activation-session-end" data-event-id="activation"
+               class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div id="activation-vcg-group-row" class="mb-4 hidden">
+        <label class="block text-sm font-medium text-slate-700 mb-2">VCG Group <span class="text-red-500">*</span></label>
+        <select id="activation-vcg-group"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <option value="">Select VCG group…</option>
+          <option value="vcg2">VCG 2</option>
+          <option value="vcg3">VCG 3</option>
+          <option value="vcg4_5">VCG 4–5</option>
+        </select>
+      </div>
+      <div class="mb-4">
+        <label class="block text-sm font-medium text-slate-700 mb-2">Event Notes</label>
+        <textarea id="activation-notes" rows="3"
+                  class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Optional notes…"></textarea>
+      </div>
+      <div class="mb-4">{{ attachment_section('activation') }}</div>
+      <div id="act-outcome-group" class="mb-4 border-t border-slate-100 pt-4">
+        <p class="text-sm font-semibold text-slate-700 mb-3">What came out of this visit? <span class="text-red-500">*</span></p>
+        <div class="mb-3">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-trigger-no-issue" onchange="_outcomeChange('act')" class="w-4 h-4 rounded border-slate-300 text-green-600 focus:ring-green-300">
+            <span class="text-sm font-medium text-slate-700">No issue</span>
+          </label>
+          <div id="act-no-issue-note" class="hidden mt-2 ml-6 px-3 py-2 bg-green-50 rounded-xl border border-green-100 text-xs text-slate-600">
+            No downstream record will be created. The visit is logged as "no issue".
+          </div>
+        </div>
+        <div class="mb-3" id="act-trigger-adverse-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-trigger-adverse" onchange="_outcomeChange('act', 'adverse')" class="w-4 h-4 rounded border-slate-300 text-red-500 focus:ring-red-300">
+            <span class="text-sm font-medium text-slate-700">Adverse Event</span>
+          </label>
+          <div id="act-adverse-note" class="hidden mt-2 ml-6 px-3 py-2 bg-red-50 rounded-xl border border-red-100 text-xs text-slate-600">
+            An Adverse Event record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+        <div class="mb-3" id="act-trigger-robot-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-trigger-robot" onchange="_outcomeChange('act', 'robot')" class="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-300">
+            <span class="text-sm font-medium text-slate-700">Robot Issue</span>
+          </label>
+          <div id="act-robot-note" class="hidden mt-2 ml-6 px-3 py-2 bg-orange-50 rounded-xl border border-orange-100 text-xs text-slate-600">
+            A Robot Issue record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+        <div class="mb-3" id="act-trigger-watch-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-trigger-watch" onchange="_outcomeChange('act', 'watch')" class="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-300">
+            <span class="text-sm font-medium text-slate-700">Watch Record Issue</span>
+          </label>
+          <div id="act-watch-note" class="hidden mt-2 ml-6 px-3 py-2 bg-blue-50 rounded-xl border border-blue-100 text-xs text-slate-600">
+            The currently open watch record will be linked to this visit. Complete it from the Watch Records tab.
+          </div>
+        </div>
+        <div id="act-trigger-other-device-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-trigger-other-device" onchange="_outcomeChange('act', 'other-device')" class="w-4 h-4 rounded border-slate-300 text-purple-500 focus:ring-purple-300">
+            <span class="text-sm font-medium text-slate-700">Other Device Issue</span>
+          </label>
+          <div id="act-other-device-note" class="hidden mt-2 ml-6 px-3 py-2 bg-purple-50 rounded-xl border border-purple-100 text-xs text-slate-600">
+            An Other Device Issue record will be created and appear in overdue events for completion.
+          </div>
+        </div>
+      </div>
+      <div id="act-outcome-ended-note" class="hidden mb-4 border-t border-slate-100 pt-4">
+        <p class="text-sm text-slate-500 italic">No further events can be triggered for this patient. This entry will be logged as "no issue".</p>
+      </div>
+    </div>
+
+    <!-- ── NO: training not completed ───────────────────────────────── -->
+    <div id="act-training-no-section" class="hidden space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">Why was training not completed? <span class="text-red-500">*</span></label>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="act-no-reason-ae"
+            onclick="_setActNoPrimaryReason('adverse_event')"
+            class="px-3 py-1.5 rounded-lg border text-sm font-medium border-slate-200 text-slate-600 hover:bg-slate-50">Adverse Event</button>
+          <button type="button" id="act-no-reason-robot"
+            onclick="_setActNoPrimaryReason('robot_issue_call')"
+            class="px-3 py-1.5 rounded-lg border text-sm font-medium border-slate-200 text-slate-600 hover:bg-slate-50">Robot Issue</button>
+          <button type="button" id="act-no-reason-odi"
+            onclick="_setActNoPrimaryReason('other_device_issue_call')"
+            class="px-3 py-1.5 rounded-lg border text-sm font-medium border-slate-200 text-slate-600 hover:bg-slate-50">Other Device Issue</button>
+          <button type="button" id="act-no-reason-other"
+            onclick="_setActNoPrimaryReason('other')"
+            class="px-3 py-1.5 rounded-lg border text-sm font-medium border-slate-200 text-slate-600 hover:bg-slate-50">Other</button>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">Visit Date <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="act-no-visit-date" data-event-id="activation"
+               class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-2">Notes <span id="act-no-notes-star" class="text-slate-400 font-normal text-xs"></span></label>
+        <textarea id="act-no-notes" rows="3"
+                  class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                  placeholder="Add any notes…"></textarea>
+      </div>
+      <div class="border-t border-slate-100 pt-4">
+        <p class="text-sm font-semibold text-slate-700 mb-3">What else came out of this visit?</p>
+        <div class="mb-3" id="act-no-trigger-ae-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-no-trigger-adverse" onchange="_actNoToggleSubform('adverse')" class="w-4 h-4 rounded border-slate-300 text-red-500 focus:ring-red-300">
+            <span class="text-sm font-medium text-slate-700">Adverse Event</span>
+          </label>
+          <div id="act-no-adverse-note" class="hidden mt-2 ml-6 px-3 py-2 bg-red-50 rounded-xl border border-red-100 text-xs text-slate-600">
+            An Adverse Event record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+        <div class="mb-3 hidden" id="act-no-trigger-robot-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-no-trigger-robot" onchange="_actNoToggleSubform('robot')" class="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-300">
+            <span class="text-sm font-medium text-slate-700">Robot Issue</span>
+          </label>
+          <div id="act-no-robot-note" class="hidden mt-2 ml-6 px-3 py-2 bg-orange-50 rounded-xl border border-orange-100 text-xs text-slate-600">
+            A Robot Issue record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+        <div class="hidden" id="act-no-trigger-other-device-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="act-no-trigger-other-device" onchange="_actNoToggleSubform('other-device')" class="w-4 h-4 rounded border-slate-300 text-purple-500 focus:ring-purple-300">
+            <span class="text-sm font-medium text-slate-700">Other Device Issue</span>
+          </label>
+          <div id="act-no-other-device-note" class="hidden mt-2 ml-6 px-3 py-2 bg-purple-50 rounded-xl border border-purple-100 text-xs text-slate-600">
+            An Other Device Issue record will be created and appear in overdue events for completion.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p id="activation-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('activation-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+      <button type="button" id="activation-submit" onclick="submitActivation()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Activate Patient</button>
+    </div>
+  </div>
+</div>
+
+<!-- Discontinue -->
+<div id="discontinue-modal" data-date-error="discontinue-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-md w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Discontinue Patient</h3>
+      <button onclick="hideModal('discontinue-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div class="px-4 py-3 bg-red-50 border border-red-200 rounded-xl">
+        <p class="text-xs text-red-500 font-medium mb-0.5">Patient</p>
+        <p id="discontinue-homer-id" class="text-base font-semibold text-slate-800"></p>
+      </div>
+      <p class="text-sm text-slate-600">Once completed, this patient record becomes read-only. Use the Device Return event to close device assignments and log device condition.</p>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Discontinuation Date/Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="disc-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-300">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Reason <span class="text-red-500">*</span></label>
+        <textarea id="discontinue-reason" rows="4" required
+                  class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+                  placeholder="Enter reason for discontinuation…"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="discontinue-notes" rows="2"
+                  class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-400 resize-none"
+                  placeholder="Additional notes…"></textarea>
+      </div>
+      {{ attachment_section('disc') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="discontinue-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('discontinue-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button type="button" id="discontinue-submit" onclick="saveDiscontinuation()" class="flex-1 px-4 py-3 bg-red-500 text-white rounded-xl font-medium hover:bg-red-600">Discontinue</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Device Return -->
+<div id="device-return-modal" data-date-error="dr-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Device Return</h3>
+      <button onclick="hideModal('device-return-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div class="px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
+        <p class="text-xs text-slate-500 font-medium mb-0.5">Patient</p>
+        <p id="dr-homer-id" class="text-base font-semibold text-slate-800"></p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Return Date/Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="dr-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        <p id="dr-date-error" class="text-xs text-red-500 mt-1 hidden"></p>
+      </div>
+      <div id="dr-devices-container" class="space-y-3">
+        <!-- Per-device cards injected by JS -->
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">General Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="dr-notes" rows="2"
+                  class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none"
+                  placeholder="Any additional notes…"></textarea>
+      </div>
+      {{ attachment_section('dr') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="dr-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('device-return-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button type="button" id="dr-save" onclick="saveDeviceReturn()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ADL Prescription -->
+<div id="adl-prescription-modal" data-date-error="adl-prescription-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">ADL Exercise Prescription</h3>
+      <button onclick="hideModal('adl-prescription-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="mb-4 px-4 py-3 bg-slate-50 rounded-xl">
+      <p class="text-xs text-slate-500 font-medium mb-0.5">Patient</p>
+      <p id="adl-prescription-homer-id" class="text-base font-semibold text-slate-800"></p>
+    </div>
+    <div class="mb-4">
+      <label id="adl-prescription-date-label" class="block text-sm font-medium text-slate-700 mb-2">Activation Date</label>
+      <input type="datetime-local" id="adl-prescription-date" readonly
+             class="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed">
+    </div>
+    <div class="mb-4 relative">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Add Exercise</label>
+      <input type="text" id="adl-prescription-search" autocomplete="off"
+             placeholder="Type to search exercises…"
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <div id="adl-prescription-results"
+           class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 overflow-hidden"></div>
+    </div>
+    <div id="adl-prescription-selected" class="mb-4 space-y-3 max-h-72 overflow-y-auto"></div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">General Notes</label>
+      <textarea id="adl-prescription-notes" rows="4"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="Optional general notes…"></textarea>
+    </div>
+    <p id="adl-prescription-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('adl-prescription-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+      <button type="button" id="adl-prescription-submit" data-label="Save Prescription" onclick="submitAdlPrescription()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save Prescription</button>
+    </div>
+  </div>
+</div>
+
+<!-- VCG Prescription -->
+<div id="vcg-prescription-modal" data-date-error="vcg-prescription-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full p-6 overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between mb-4">
+      <h3 class="text-xl font-bold text-slate-800">VCG Exercise Prescription</h3>
+      <button onclick="hideModal('vcg-prescription-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="mb-4 px-4 py-3 bg-slate-50 rounded-xl">
+      <p class="text-xs text-slate-500 font-medium mb-0.5">Patient</p>
+      <p id="vcg-prescription-homer-id" class="text-base font-semibold text-slate-800"></p>
+    </div>
+    <div class="mb-4">
+      <label id="vcg-prescription-date-label" class="block text-sm font-medium text-slate-700 mb-2">Activation Date</label>
+      <input type="datetime-local" id="vcg-prescription-date" readonly
+             class="w-full px-4 py-3 bg-slate-100 border border-slate-200 rounded-xl text-sm text-slate-500 cursor-not-allowed">
+    </div>
+    <div class="mb-4 px-4 py-3 bg-blue-50 border border-blue-100 rounded-xl">
+      <p class="text-xs text-blue-500 font-medium mb-0.5">VCG Group</p>
+      <p id="vcg-prescription-group-label" class="text-sm font-semibold text-slate-800">—</p>
+    </div>
+    <div class="mb-4 relative">
+      <label class="block text-sm font-medium text-slate-700 mb-2">Add Exercise</label>
+      <input type="text" id="vcg-prescription-search" autocomplete="off"
+             placeholder="Type to search exercises…"
+             class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500">
+      <div id="vcg-prescription-results"
+           class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-lg z-10 overflow-hidden"></div>
+    </div>
+    <div id="vcg-prescription-selected" class="mb-4 space-y-3 max-h-72 overflow-y-auto"></div>
+    <div class="mb-4">
+      <label class="block text-sm font-medium text-slate-700 mb-2">General Notes</label>
+      <textarea id="vcg-prescription-notes" rows="4"
+                class="w-full px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
+                placeholder="Optional general notes…"></textarea>
+    </div>
+    <p id="vcg-prescription-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('vcg-prescription-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+      <button type="button" id="vcg-prescription-submit" data-label="Save Prescription" onclick="submitVcgPrescription()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save Prescription</button>
+    </div>
+  </div>
+</div>
+
+<!-- Prescription Printout modal -->
+<div id="prescription-printout-modal" data-date-error="prescription-printout-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-3xl w-full p-6 overflow-y-auto max-h-[90vh]">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="prescription-printout-title" class="text-xl font-bold text-slate-800">Therapy Prescription Printout</h3>
+      <button onclick="hideModal('prescription-printout-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+
+    <!-- Patient info -->
+    <div class="mb-4 px-4 py-3 bg-slate-50 rounded-xl">
+      <p class="text-xs text-slate-500 font-medium mb-0.5">Patient</p>
+      <p id="prescription-printout-homer-id" class="text-base font-semibold text-slate-800"></p>
+    </div>
+
+    <!-- Language selector -->
+    <div class="mb-6">
+      <label class="block text-sm font-medium text-slate-700 mb-3">Language</label>
+      <div id="presc-printout-language-buttons" class="flex flex-wrap gap-2">
+        <!-- Buttons will be inserted here by JavaScript -->
+      </div>
+    </div>
+
+    <!-- Pamphlet preview pane -->
+    <div id="presc-printout-preview"
+         class="mb-6 border rounded-xl bg-slate-50 overflow-hidden max-h-96 overflow-y-auto">
+      <p class="text-slate-400 text-center py-12 text-sm">Select a language to preview the pamphlet</p>
+    </div>
+
+    <!-- Error message -->
+    <p id="prescription-printout-error" class="text-sm text-red-500 hidden mb-3"></p>
+
+    <!-- Action buttons -->
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('prescription-printout-modal')"
+              class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">
+        Cancel
+      </button>
+      <button type="button" id="prescription-printout-print" data-label="Print"
+              onclick="printPrescriptionPamphlet()" disabled
+              class="flex-1 px-4 py-3 bg-green-500 text-white rounded-xl font-medium hover:bg-green-600 flex items-center justify-center gap-2">
+        <i class="fas fa-print text-sm"></i> Print
+      </button>
+      <button type="button" id="prescription-printout-save" data-label="Save PDF"
+              onclick="savePrescriptionPrintout()" disabled
+              class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700 flex items-center justify-center gap-2">
+        <i class="fas fa-download text-sm"></i> Save PDF
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Simple event modal (home visits, follow-up calls, training completion) -->
+<div id="simple-event-modal" data-date-error="simple-event-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-md w-full p-6">
+    <div class="flex items-center justify-between mb-4">
+      <h3 id="simple-event-title" class="text-xl font-bold text-slate-800"></h3>
+      <button onclick="hideModal('simple-event-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="space-y-4 mb-5">
+      <div id="simple-event-date-wrap">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Event Date</label>
+        <input id="simple-event-date" type="datetime-local" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+      </div>
+      <div id="simple-event-session-wrap" class="hidden space-y-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Session Start <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="simple-event-session-start"
+                 class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Session End <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="simple-event-session-end"
+                 class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Event Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="simple-event-notes" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Add any notes…"></textarea>
+      </div>
+      {{ attachment_section('simple-event') }}
+    </div>
+    <p id="simple-event-error" class="text-sm text-red-500 hidden mb-3"></p>
+    <div class="flex gap-3">
+      <button type="button" onclick="hideModal('simple-event-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+      <button type="button" onclick="saveSimpleEvent()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Training Completion D29 Modal ──────────────────────────────── -->
+<div id="d29-modal" data-date-error="d29-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Training Completion Day 29</h3>
+      <button onclick="hideModal('d29-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto px-6 pb-2 flex-1 space-y-4">
+      <!-- Event date -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Visit Date <span class="text-red-500">*</span></label>
+        <input id="d29-date" type="datetime-local" data-event-id="training_completion_d29" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+      </div>
+      <!-- General notes -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="d29-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Add any notes…"></textarea>
+      </div>
+      <!-- A1 appointment date -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">A1 Appointment Date <span class="text-slate-400 font-normal">(optional — sets the A1 assessment date)</span></label>
+        <input id="d29-a1-appointment" type="date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+      </div>
+      <!-- AE discussion — shown only when an adverse_event_followup stub exists -->
+      <div id="d29-ae-section" class="hidden border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-2">
+        <p class="text-sm font-semibold text-amber-800">Adverse Event Discussion</p>
+        <p class="text-xs text-amber-700">There is an ongoing adverse event follow-up. Did any AE-related discussion happen during this visit?</p>
+        <input type="hidden" id="d29-ae-discussed" value="">
+        <div class="flex gap-3 pt-1">
+          <button type="button" id="d29-ae-yes-btn"
+                  onclick="_d29SelectAeDiscussed(true)"
+                  class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-medium hover:bg-slate-100 transition-colors">Yes</button>
+          <button type="button" id="d29-ae-no-btn"
+                  onclick="_d29SelectAeDiscussed(false)"
+                  class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-medium hover:bg-slate-100 transition-colors">No</button>
+        </div>
+      </div>
+      <!-- Feedback form section -->
+      <div class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <p class="text-sm font-semibold text-slate-700">Feedback Form</p>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1">Upload PDF <span class="text-slate-400 font-normal">(optional — if absent, notes required)</span></label>
+          <input id="d29-feedback-file" type="file" accept=".pdf"
+            class="w-full text-sm text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-slate-100 file:text-slate-600 hover:file:bg-slate-200 cursor-pointer">
+        </div>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-1" id="d29-feedback-notes-label">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+          <textarea id="d29-feedback-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Notes about the feedback form…"></textarea>
+        </div>
+      </div>
+      <!-- Qualitative analysis section -->
+      <div class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <p class="text-sm font-semibold text-slate-700">Qualitative Analysis</p>
+        <div>
+          <label class="block text-xs font-medium text-slate-600 mb-2">Was this patient recruited for qualitative analysis?</label>
+          <input type="hidden" id="d29-qual-recruited" value="">
+          <div class="flex gap-3">
+            <button type="button" id="d29-qual-yes-btn"
+                    onclick="_d29SelectQual(true)"
+                    class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-medium hover:bg-slate-100 transition-colors">Yes</button>
+            <button type="button" id="d29-qual-no-btn"
+                    onclick="_d29SelectQual(false)"
+                    class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-medium hover:bg-slate-100 transition-colors">No</button>
+          </div>
+        </div>
+        <div id="d29-qual-uploads" class="hidden space-y-3">
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Audio Recording <span class="text-red-500">*</span> <span class="text-slate-400 font-normal">(MP3, M4A, or WAV)</span></label>
+            <input id="d29-audio-file" type="file" accept=".mp3,.m4a,.wav"
+              class="w-full text-sm text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-slate-100 file:text-slate-600 hover:file:bg-slate-200 cursor-pointer">
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-600 mb-1">Scanned Document <span class="text-slate-400 font-normal">(optional, PDF)</span></label>
+            <input id="d29-scan-file" type="file" accept=".pdf"
+              class="w-full text-sm text-slate-500 file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-medium file:bg-slate-100 file:text-slate-600 hover:file:bg-slate-200 cursor-pointer">
+          </div>
+        </div>
+      </div>
+      <!-- Generic attachment -->
+      {{ attachment_section('d29') }}
+    </div>
+    <div class="px-6 py-4 shrink-0">
+      <p id="d29-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('d29-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button type="button" onclick="saveD29()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="home-visit-modal" data-date-error="hv-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 id="hv-title" class="text-xl font-bold text-slate-800"></h3>
+      <button onclick="hideModal('home-visit-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+
+      <!-- Was training completed? -->
+      <div>
+        <p class="text-sm font-semibold text-slate-700 mb-2">Was training completed? <span class="text-red-500">*</span></p>
+        <div class="flex gap-2">
+          <button type="button" id="hv-train-yes-btn"
+                  onclick="_setHvTrainingToggle(true)"
+                  class="flex-1 px-4 py-2 rounded-xl border text-sm font-medium transition-colors border-slate-200 text-slate-600 hover:bg-slate-50">
+            Yes
+          </button>
+          <button type="button" id="hv-train-no-btn"
+                  onclick="_setHvTrainingToggle(false)"
+                  class="flex-1 px-4 py-2 rounded-xl border text-sm font-medium transition-colors border-slate-200 text-slate-600 hover:bg-slate-50">
+            No
+          </button>
+        </div>
+      </div>
+
+      <!-- YES section: training completed -->
+      <div id="hv-yes-section" class="hidden space-y-4">
+        <div id="hv-date-lock-note" class="hidden px-3 py-2 bg-blue-50 rounded-xl border border-blue-100 text-xs text-slate-600">
+          <i class="fas fa-lock text-blue-400 mr-1"></i> Date is locked to <span id="hv-date-lock-label"></span>. Select session time only.
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Session Start <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="hv-session-start" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Session End <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="hv-session-end" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Event Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+          <textarea id="hv-notes" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Add any notes…"></textarea>
+        </div>
+        {{ attachment_section('hv') }}
+        <div id="hv-outcome-group" class="border-t border-slate-100 pt-4">
+          <p class="text-sm font-semibold text-slate-700 mb-3">What came out of this visit? <span class="text-red-500">*</span></p>
+          <div class="mb-3">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-trigger-no-issue" onchange="_outcomeChange('hv')" class="w-4 h-4 rounded border-slate-300 text-green-600 focus:ring-green-300">
+              <span class="text-sm font-medium text-slate-700">No issue</span>
+            </label>
+            <div id="hv-no-issue-note" class="hidden mt-2 ml-6 px-3 py-2 bg-green-50 rounded-xl border border-green-100 text-xs text-slate-600">
+              No downstream record will be created. The visit is logged as "no issue".
+            </div>
+          </div>
+          <div class="mb-3" id="hv-trigger-adverse-wrap">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-trigger-adverse" onchange="_outcomeChange('hv', 'adverse')" class="w-4 h-4 rounded border-slate-300 text-red-500 focus:ring-red-300">
+              <span class="text-sm font-medium text-slate-700">Adverse Event</span>
+            </label>
+            <div id="hv-adverse-note" class="hidden mt-2 ml-6 px-3 py-2 bg-red-50 rounded-xl border border-red-100 text-xs text-slate-600">
+              An Adverse Event record will be created and appear in the overdue events panel for completion.
+            </div>
+          </div>
+          <div class="mb-3" id="hv-trigger-robot-wrap">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-trigger-robot" onchange="_outcomeChange('hv', 'robot')" class="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-300">
+              <span class="text-sm font-medium text-slate-700">Robot Issue</span>
+            </label>
+            <div id="hv-robot-note" class="hidden mt-2 ml-6 px-3 py-2 bg-orange-50 rounded-xl border border-orange-100 text-xs text-slate-600">
+              A Robot Issue record will be created and appear in the overdue events panel for completion.
+            </div>
+          </div>
+          <div class="mb-3" id="hv-trigger-watch-wrap">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-trigger-watch" onchange="_outcomeChange('hv', 'watch')" class="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-300">
+              <span class="text-sm font-medium text-slate-700">Watch Record Issue</span>
+            </label>
+            <div id="hv-watch-note" class="hidden mt-2 ml-6 px-3 py-2 bg-blue-50 rounded-xl border border-blue-100 text-xs text-slate-600">
+              The currently open watch record will be linked to this visit. Complete it from the Watch Records tab.
+            </div>
+          </div>
+          <div id="hv-trigger-other-device-wrap">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-trigger-other-device" onchange="_outcomeChange('hv', 'other-device')" class="w-4 h-4 rounded border-slate-300 text-purple-500 focus:ring-purple-300">
+              <span class="text-sm font-medium text-slate-700">Other Device Issue</span>
+            </label>
+            <div class="hidden mt-2 ml-6 px-3 py-2 bg-purple-50 rounded-xl border border-purple-100 text-xs text-slate-600" id="hv-other-device-note">
+              An Other Device Issue record will be created and appear in overdue events for completion.
+            </div>
+          </div>
+        </div>
+        <div id="hv-outcome-ended-note" class="hidden border-t border-slate-100 pt-4">
+          <p class="text-sm text-slate-500 italic">No further events can be triggered for this patient. This entry will be logged as "no issue".</p>
+        </div>
+        <div class="h-1"></div>
+      </div>
+
+      <!-- NO section: training not completed -->
+      <div id="hv-no-section" class="hidden space-y-4">
+        <div id="hv-no-broken-protocol-warn" class="hidden px-3 py-2 bg-red-50 rounded-xl border border-red-200">
+          <p class="text-xs font-semibold text-red-700 mb-0.5"><i class="fas fa-exclamation-triangle mr-1"></i>Broken Protocol Warning</p>
+          <p class="text-xs text-red-600">Training was not completed on this day. This will mark the patient as broken protocol. You will be asked to confirm before saving.</p>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-2">Why was training not completed? <span class="text-red-500">*</span></label>
+          <div class="flex flex-wrap gap-2">
+            <button type="button" id="hv-no-reason-ae"
+              class="px-3 py-1.5 rounded-full border text-sm font-medium border-slate-200 text-slate-600 hover:border-blue-400"
+              onclick="_setHvNoPrimaryReason('adverse_event')">Adverse Event</button>
+            <button type="button" id="hv-no-reason-robot"
+              class="px-3 py-1.5 rounded-full border text-sm font-medium border-slate-200 text-slate-600 hover:border-blue-400 hidden"
+              onclick="_setHvNoPrimaryReason('robot_issue_call')">Robot Issue</button>
+            <button type="button" id="hv-no-reason-odi"
+              class="px-3 py-1.5 rounded-full border text-sm font-medium border-slate-200 text-slate-600 hover:border-blue-400 hidden"
+              onclick="_setHvNoPrimaryReason('other_device_issue_call')">Other Device Issue</button>
+            <button type="button" id="hv-no-reason-other"
+              class="px-3 py-1.5 rounded-full border text-sm font-medium border-slate-200 text-slate-600 hover:border-blue-400"
+              onclick="_setHvNoPrimaryReason('other')">Other</button>
+          </div>
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Visit Date &amp; Time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="hv-no-visit-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span id="hv-no-notes-star" class="text-slate-400 font-normal text-xs"></span></label>
+          <textarea id="hv-no-notes" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Add any notes…"></textarea>
+        </div>
+        {{ attachment_section('hv-no') }}
+        <div class="border-t border-slate-100 pt-4">
+          <p class="text-sm font-semibold text-slate-700 mb-3">Additional events from this visit</p>
+          <div class="mb-3" id="hv-no-trigger-ae-wrap">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-no-trigger-adverse" onchange="_hvNoToggleSubform('adverse')" class="w-4 h-4 rounded border-slate-300 text-red-500 focus:ring-red-300">
+              <span class="text-sm font-medium text-slate-700">Adverse Event</span>
+            </label>
+            <div id="hv-no-adverse-note" class="hidden mt-2 ml-6 px-3 py-2 bg-red-50 rounded-xl border border-red-100 text-xs text-slate-600">
+              An Adverse Event record will be created and appear in the overdue events panel for completion.
+            </div>
+          </div>
+          <div class="mb-3 hidden" id="hv-no-trigger-robot-wrap">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-no-trigger-robot" onchange="_hvNoToggleSubform('robot')" class="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-300">
+              <span class="text-sm font-medium text-slate-700">Robot Issue</span>
+            </label>
+            <div id="hv-no-robot-note" class="hidden mt-2 ml-6 px-3 py-2 bg-orange-50 rounded-xl border border-orange-100 text-xs text-slate-600">
+              A Robot Issue record will be created and appear in the overdue events panel for completion.
+            </div>
+          </div>
+          <div class="hidden" id="hv-no-trigger-other-device-wrap">
+            <label class="flex items-center gap-2 cursor-pointer select-none">
+              <input type="checkbox" id="hv-no-trigger-other-device" onchange="_hvNoToggleSubform('other-device')" class="w-4 h-4 rounded border-slate-300 text-purple-500 focus:ring-purple-300">
+              <span class="text-sm font-medium text-slate-700">Other Device Issue</span>
+            </label>
+            <div id="hv-no-other-device-note" class="hidden mt-2 ml-6 px-3 py-2 bg-purple-50 rounded-xl border border-purple-100 text-xs text-slate-600">
+              An Other Device Issue record will be created and appear in overdue events for completion.
+            </div>
+          </div>
+        </div>
+        <div class="h-1"></div>
+      </div>
+
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="hv-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('home-visit-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="hv-save" type="button" onclick="saveHomeVisit()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="followup-call-modal" data-date-error="followup-call-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 id="followup-call-title" class="text-xl font-bold text-slate-800"></h3>
+      <button onclick="hideModal('followup-call-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call Date &amp; Time</label>
+        <input id="followup-call-date" type="datetime-local" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+      </div>
+      <div id="followup-call-date-reason-wrap" class="hidden">
+        <label class="block text-sm font-medium text-amber-700 mb-1">Reason for date change <span class="text-xs font-normal text-slate-500">(scheduled: <span id="followup-call-scheduled-display"></span>)</span></label>
+        <textarea id="followup-call-date-reason" rows="2" class="w-full px-3 py-2 border border-amber-300 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-300 resize-none" placeholder="Why is the call date different from the scheduled date?"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Duration (minutes) <span class="text-red-500">*</span></label>
+          <input id="followup-call-duration" type="number" min="1" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="e.g. 20" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Call Mode <span class="text-red-500">*</span></label>
+          <div class="flex gap-2" id="fc-call-mode-group">
+            <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="fc-call-mode" value="audio" class="w-4 h-4 text-blue-500"> Audio
+            </label>
+            <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="fc-call-mode" value="video" class="w-4 h-4 text-blue-500"> Video
+            </label>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Event Notes <span class="text-red-500">*</span></label>
+        <textarea id="followup-call-notes" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Summary of the call…"></textarea>
+      </div>
+
+      {{ attachment_section('followup-call') }}
+
+      <!-- AE discussion — shown only when an adverse_event_followup stub exists -->
+      <div id="fc-ae-section" class="hidden border border-amber-200 bg-amber-50 rounded-xl p-4 space-y-2">
+        <p class="text-sm font-semibold text-amber-800">Adverse Event Discussion</p>
+        <p class="text-xs text-amber-700">There is an ongoing adverse event follow-up. Did any AE-related discussion happen during this call?</p>
+        <input type="hidden" id="fc-ae-discussed" value="">
+        <div class="flex gap-3 pt-1">
+          <button type="button" id="fc-ae-yes-btn"
+                  onclick="_fcSelectAeDiscussed(true)"
+                  class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-medium hover:bg-slate-100 transition-colors">Yes</button>
+          <button type="button" id="fc-ae-no-btn"
+                  onclick="_fcSelectAeDiscussed(false)"
+                  class="flex-1 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-medium hover:bg-slate-100 transition-colors">No</button>
+        </div>
+      </div>
+
+      <!-- ── Triggered events ─────────────────────────────────────────── -->
+      <div id="fc-outcome-group" class="border-t border-slate-100 pt-4">
+        <p class="text-sm font-semibold text-slate-700 mb-3">What came out of this call? <span class="text-red-500">*</span></p>
+
+        <!-- No Issue — mutually exclusive with every issue toggle below -->
+        <div class="mb-3">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="fc-trigger-no-issue" onchange="_outcomeChange('fc')" class="w-4 h-4 rounded border-slate-300 text-green-600 focus:ring-green-300">
+            <span class="text-sm font-medium text-slate-700">No issue</span>
+          </label>
+          <div id="fc-no-issue-note" class="hidden mt-2 ml-6 px-3 py-2 bg-green-50 rounded-xl border border-green-100 text-xs text-slate-600">
+            No downstream record will be created. The call is logged as "no issue".
+          </div>
+        </div>
+
+        <!-- Adverse Event -->
+        <div class="mb-3" id="fc-trigger-adverse-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="fc-trigger-adverse" onchange="_outcomeChange('fc', 'adverse')" class="w-4 h-4 rounded border-slate-300 text-red-500 focus:ring-red-300">
+            <span class="text-sm font-medium text-slate-700">Adverse Event</span>
+          </label>
+          <div id="fc-adverse-note" class="hidden mt-2 ml-6 px-3 py-2 bg-red-50 rounded-xl border border-red-100 text-xs text-slate-600">
+            An Adverse Event record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+
+        <!-- Robot Issue (experimental only) -->
+        <div class="mb-3" id="fc-trigger-robot-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="fc-trigger-robot" onchange="_outcomeChange('fc', 'robot')" class="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-300">
+            <span class="text-sm font-medium text-slate-700">Robot Issue</span>
+          </label>
+          <div id="fc-robot-note" class="hidden mt-2 ml-6 px-3 py-2 bg-orange-50 rounded-xl border border-orange-100 text-xs text-slate-600">
+            A Robot Issue record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+
+        <!-- Watch Record -->
+        <div id="fc-trigger-watch-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="fc-trigger-watch" onchange="_outcomeChange('fc', 'watch')" class="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-300">
+            <span class="text-sm font-medium text-slate-700">Watch Record Issue</span>
+          </label>
+          <div id="fc-watch-note" class="hidden mt-2 ml-6 px-3 py-2 bg-blue-50 rounded-xl border border-blue-100 text-xs text-slate-600">
+            The currently open watch record will be linked to this call. Complete it from the Watch Records tab.
+          </div>
+        </div>
+        <!-- Other Device Issue -->
+        <div class="mt-3" id="fc-trigger-other-device-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="fc-trigger-other-device" onchange="_outcomeChange('fc', 'other-device')" class="w-4 h-4 rounded border-slate-300 text-purple-500 focus:ring-purple-300">
+            <span class="text-sm font-medium text-slate-700">Other Device Issue</span>
+          </label>
+          <div class="hidden mt-2 ml-6 px-3 py-2 bg-purple-50 rounded-xl border border-purple-100 text-xs text-slate-600" id="fc-other-device-note">
+            An Other Device Issue record will be created and appear in overdue events for completion.
+          </div>
+        </div>
+      </div>
+      <div id="fc-outcome-ended-note" class="hidden border-t border-slate-100 pt-4">
+        <p class="text-sm text-slate-500 italic">No further events can be triggered for this patient. This call will be logged as "no issue".</p>
+      </div>
+
+      <div class="h-1"></div>
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="followup-call-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('followup-call-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="followup-call-save" type="button" onclick="saveFollowupCall()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="patient-call-modal" data-date-error="pc-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Log Patient Call</h3>
+      <button onclick="hideModal('patient-call-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call Date &amp; Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="pc-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" />
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Duration (minutes) <span class="text-red-500">*</span></label>
+          <input id="pc-duration" type="number" min="1" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="e.g. 10" />
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Call Mode <span class="text-red-500">*</span></label>
+          <div class="flex gap-2" id="pc-call-mode-group">
+            <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="pc-call-mode" value="audio" class="w-4 h-4 text-blue-500"> Audio
+            </label>
+            <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="pc-call-mode" value="video" class="w-4 h-4 text-blue-500"> Video
+            </label>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Event Notes <span class="text-red-500">*</span></label>
+        <textarea id="pc-notes" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Summary of the call…"></textarea>
+      </div>
+
+      <!-- Therapist initiated toggle -->
+      <div class="border border-slate-200 rounded-xl px-4 py-3">
+        <label class="flex items-center justify-between cursor-pointer select-none">
+          <span class="text-sm font-medium text-slate-700">Therapist initiated call</span>
+          <input type="checkbox" id="pc-therapist-initiated" onchange="_pcToggleTherapistInitiated()" class="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-300">
+        </label>
+        <div id="pc-reason-wrap" class="hidden mt-3">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Reason <span class="text-red-400">*</span></label>
+          <textarea id="pc-reason" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Why was this call initiated by the therapist?"></textarea>
+        </div>
+      </div>
+
+      {{ attachment_section('pc') }}
+
+      <!-- ── Triggered events ─────────────────────────────────────────── -->
+      <div id="pc-outcome-group" class="border-t border-slate-100 pt-4">
+        <p class="text-sm font-semibold text-slate-700 mb-3">What came out of this call? <span class="text-red-500">*</span></p>
+        <!-- No Issue — mutually exclusive with every issue toggle below -->
+        <div class="mb-3">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="pc-trigger-no-issue" onchange="_outcomeChange('pc')" class="w-4 h-4 rounded border-slate-300 text-green-600 focus:ring-green-300">
+            <span class="text-sm font-medium text-slate-700">No issue</span>
+          </label>
+          <div id="pc-no-issue-note" class="hidden mt-2 ml-6 px-3 py-2 bg-green-50 rounded-xl border border-green-100 text-xs text-slate-600">
+            No downstream record will be created. The call is logged as "no issue".
+          </div>
+        </div>
+        <!-- Adverse Event -->
+        <div class="mb-3" id="pc-trigger-adverse-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="pc-trigger-adverse" onchange="_outcomeChange('pc', 'adverse')" class="w-4 h-4 rounded border-slate-300 text-red-500 focus:ring-red-300">
+            <span class="text-sm font-medium text-slate-700">Adverse Event</span>
+          </label>
+          <div id="pc-adverse-note" class="hidden mt-2 ml-6 px-3 py-2 bg-red-50 rounded-xl border border-red-100 text-xs text-slate-600">
+            An Adverse Event record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+        <!-- Robot Issue (experimental only) -->
+        <div class="mb-3" id="pc-trigger-robot-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="pc-trigger-robot" onchange="_outcomeChange('pc', 'robot')" class="w-4 h-4 rounded border-slate-300 text-orange-500 focus:ring-orange-300">
+            <span class="text-sm font-medium text-slate-700">Robot Issue</span>
+          </label>
+          <div id="pc-robot-note" class="hidden mt-2 ml-6 px-3 py-2 bg-orange-50 rounded-xl border border-orange-100 text-xs text-slate-600">
+            A Robot Issue record will be created and appear in the overdue events panel for completion.
+          </div>
+        </div>
+        <!-- Watch Record -->
+        <div id="pc-trigger-watch-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="pc-trigger-watch" onchange="_outcomeChange('pc', 'watch')" class="w-4 h-4 rounded border-slate-300 text-blue-500 focus:ring-blue-300">
+            <span class="text-sm font-medium text-slate-700">Watch Record Issue</span>
+          </label>
+          <div id="pc-watch-note" class="hidden mt-2 ml-6 px-3 py-2 bg-blue-50 rounded-xl border border-blue-100 text-xs text-slate-600">
+            The currently open watch record will be linked to this call. Complete it from the Watch Records tab.
+          </div>
+        </div>
+        <!-- Other Device Issue -->
+        <div class="mt-3" id="pc-trigger-other-device-wrap">
+          <label class="flex items-center gap-2 cursor-pointer select-none">
+            <input type="checkbox" id="pc-trigger-other-device" onchange="_outcomeChange('pc')" class="w-4 h-4 rounded border-slate-300 text-purple-500 focus:ring-purple-300">
+            <span class="text-sm font-medium text-slate-700">Other Device Issue</span>
+          </label>
+          <div class="hidden mt-2 ml-6 px-3 py-2 bg-purple-50 rounded-xl border border-purple-100 text-xs text-slate-600" id="pc-other-device-note">
+            An Other Device Issue record will be created and appear in overdue events for completion.
+          </div>
+        </div>
+      </div>
+      <div id="pc-outcome-ended-note" class="hidden border-t border-slate-100 pt-4">
+        <p class="text-sm text-slate-500 italic">No further events can be triggered for this patient. This call will be logged as "no issue".</p>
+      </div>
+      <div class="h-1"></div>
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="pc-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('patient-call-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="pc-save" type="button" onclick="savePatientCall()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="agwatch-timing-modal" data-date-error="agwatch-timing-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl w-full max-w-4xl flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between p-6 pb-4 shrink-0">
+      <h3 id="agwatch-timing-title" class="text-xl font-bold text-slate-800"></h3>
+      <button onclick="hideModal('agwatch-timing-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div id="agwatch-session-window-wrap" class="px-6 pb-3 shrink-0 hidden">
+      <p id="agwatch-session-window" class="px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-sm font-medium text-amber-800"></p>
+    </div>
+    <!-- Table header -->
+    <div class="px-6 pb-2 shrink-0">
+      <div class="grid grid-cols-[2fr_1fr_1fr_2fr] gap-3 text-xs font-semibold text-slate-400 uppercase tracking-wider px-3">
+        <span>Exercise</span><span>Start</span><span>End</span><span>Notes</span>
+      </div>
+    </div>
+    <div id="agwatch-timing-body" class="overflow-y-auto px-6 space-y-1 grow">
+    </div>
+    <div class="px-6 pt-4 pb-6 shrink-0 space-y-4">
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Event Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="agwatch-timing-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Overall session notes…"></textarea>
+      </div>
+      {{ attachment_section('agwatch') }}
+      <p id="agwatch-timing-error" class="text-sm text-red-500 hidden"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('agwatch-timing-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button type="button" onclick="saveAgwatchTiming()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Watch Record -->
+<div id="watch-record-modal" data-date-error="wr-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Watch Record</h3>
+      <button onclick="hideModal('watch-record-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <!-- Context banner -->
+      <div id="wr-context-banner" class="px-4 py-2 rounded-xl text-sm font-medium"></div>
+      <!-- Current watches (read-only) -->
+      <div class="px-4 py-3 bg-slate-50 rounded-xl">
+        <p class="text-xs text-slate-500 font-medium mb-2">Current Watches</p>
+        <div id="wr-right-current-row" class="flex items-center justify-between mb-1">
+          <span class="text-xs text-slate-500">Right</span>
+          <div class="flex items-center gap-3">
+            <span id="wr-old-right" class="text-sm font-medium text-slate-700"></span>
+            <label id="wr-right-lost-wrap" class="hidden flex items-center gap-1 cursor-pointer select-none">
+              <input type="checkbox" id="wr-right-lost" class="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-300">
+              <span class="text-xs text-red-600 font-medium">Lost</span>
+            </label>
+          </div>
+        </div>
+        <div id="wr-left-current-row" class="flex items-center justify-between">
+          <span class="text-xs text-slate-500">Left</span>
+          <div class="flex items-center gap-3">
+            <span id="wr-old-left" class="text-sm font-medium text-slate-700"></span>
+            <label id="wr-left-lost-wrap" class="hidden flex items-center gap-1 cursor-pointer select-none">
+              <input type="checkbox" id="wr-left-lost" class="w-3.5 h-3.5 rounded border-slate-300 text-red-500 focus:ring-red-300">
+              <span class="text-xs text-red-600 font-medium">Lost</span>
+            </label>
+          </div>
+        </div>
+        <p id="wr-no-watches-msg" class="hidden text-sm text-slate-400 italic">No watches assigned.</p>
+      </div>
+      <!-- New watch right -->
+      <div id="wr-right-wrap">
+        <label class="block text-sm font-medium text-slate-700 mb-1">New Watch — Right <span class="text-red-500">*</span></label>
+        <select id="wr-new-right" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+          <option value="">Loading…</option>
+        </select>
+      </div>
+      <!-- New watch left -->
+      <div id="wr-left-wrap">
+        <label class="block text-sm font-medium text-slate-700 mb-1">New Watch — Left <span class="text-red-500">*</span></label>
+        <select id="wr-new-left" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-40 disabled:cursor-not-allowed">
+          <option value="">Loading…</option>
+        </select>
+      </div>
+      <!-- Sync datetime (two-watch patients only) -->
+      <div id="wr-sync-wrap">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Sync Date & Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="wr-sync-datetime" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-40 disabled:cursor-not-allowed">
+      </div>
+      <!-- Worn datetime -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Worn Date & Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="wr-worn-datetime" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 disabled:opacity-40 disabled:cursor-not-allowed">
+      </div>
+      <!-- Next follow-up days -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Next Follow-up In <span class="text-red-500">*</span></label>
+        <div class="flex items-center gap-2">
+          <input type="number" id="wr-next-days" min="1" class="w-32 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="7">
+          <span class="text-sm text-slate-500">days</span>
+        </div>
+      </div>
+      <!-- Notes -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Event Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="wr-notes" rows="3" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Optional notes…"></textarea>
+      </div>
+      {{ attachment_section('wr') }}
+    </div>
+    <div class="px-6 pt-4 pb-6 shrink-0">
+      <p id="wr-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('watch-record-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="wr-save" type="button" onclick="saveWatchRecord()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- AG Watch Data Upload modal -->
+<div id="watch-data-upload-modal" data-date-error="wdu-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">AG Watch Data Upload</h3>
+      <button onclick="hideModal('watch-data-upload-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <!-- Context banner (watch id, limb, removed date, expected data range) -->
+      <div id="wdu-context-banner" class="px-4 py-3 bg-indigo-50 border border-indigo-100 rounded-xl text-sm text-indigo-800"></div>
+      <!-- Skip toggle -->
+      <label class="flex items-center gap-2 cursor-pointer select-none">
+        <input type="checkbox" id="wdu-skip" class="w-4 h-4 rounded border-slate-300 text-amber-500 focus:ring-amber-300">
+        <span class="text-sm font-medium text-amber-700">Data could not be retrieved</span>
+      </label>
+      <!-- Data file (.gt3x) — uploads on select -->
+      <div id="wdu-file-wrap">
+        <label class="block text-sm font-medium text-slate-700 mb-1">ActiGraph Data File (.gt3x) <span class="text-red-500">*</span></label>
+        <input type="file" id="wdu-file" accept=".gt3x" class="w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-sm file:font-medium file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100">
+        <!-- Upload progress -->
+        <div id="wdu-progress-wrap" class="hidden mt-2">
+          <div class="flex items-center justify-between mb-1">
+            <span id="wdu-progress-text" class="text-xs text-slate-500">Uploading… 0%</span>
+          </div>
+          <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+            <div id="wdu-progress-bar" class="h-full bg-blue-500 rounded-full transition-all" style="width:0%"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Notes -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span id="wdu-notes-req" class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="wdu-notes" rows="3" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Notes…"></textarea>
+      </div>
+    </div>
+    <div class="px-6 pt-4 pb-6 shrink-0">
+      <p id="wdu-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('watch-data-upload-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="wdu-save" type="button" onclick="saveWatchDataUpload()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Adverse Event modal ─────────────────────────────────────────────────── -->
+<div id="adverse-event-modal" data-date-error="ae-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-md w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">File Adverse Event</h3>
+      <button onclick="hideModal('adverse-event-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div id="ae-context-banner" class="px-4 py-2 rounded-xl text-sm font-medium bg-slate-50 text-slate-600 border border-slate-200"></div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Event Date <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="ae-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Description <span class="text-red-500">*</span></label>
+        <textarea id="ae-description" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Describe the adverse event…"></textarea>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Action taken <span class="text-red-500">*</span></label>
+        <textarea id="ae-action-taken" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="What action was taken?"></textarea>
+      </div>
+      <div id="ae-paused-wrap">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="ae-paused" class="w-4 h-4 rounded border-slate-300">
+          <span class="text-sm text-slate-700">Training paused as a result</span>
+        </label>
+      </div>
+      <!-- Follow-up visit scheduling -->
+      <div class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="ae-schedule-visit" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a follow-up visit</span>
+        </label>
+        <div id="ae-visit-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="ae-visit-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <!-- Clinical visit scheduling -->
+      <div class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="ae-schedule-clinical" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a clinical visit</span>
+        </label>
+        <div id="ae-clinical-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="ae-clinical-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      {{ attachment_section('ae') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="ae-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('adverse-event-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="ae-save" type="button" onclick="saveAdverseEvent()" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Robot Issue Call modal ─────────────────────────────────────────────── -->
+<div id="robot-issue-call-modal" data-date-error="ric-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Robot Issue — Engineer Call</h3>
+      <button onclick="hideModal('robot-issue-call-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div id="ric-context-banner" class="px-4 py-2 rounded-xl text-sm font-medium bg-slate-50 text-slate-600 border border-slate-200"></div>
+      <div id="ric-bp-banner" class="hidden px-4 py-2 rounded-xl text-sm font-medium bg-amber-50 text-amber-700 border border-amber-200">
+        <i class="fas fa-exclamation-triangle mr-1"></i>Training is broken protocol — document faulty devices only. No outcome decision needed.
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call Date/Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="ric-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Issue Occurred Date <span class="text-red-500">*</span></label>
+        <input type="date" id="ric-issue-occur-date" required class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call Mode <span class="text-red-500">*</span></label>
+        <div class="flex gap-2" id="ric-call-mode-group">
+          <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="ric-call-mode" value="audio" class="w-4 h-4 text-blue-500"> Audio
+          </label>
+          <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="ric-call-mode" value="video" class="w-4 h-4 text-blue-500"> Video
+          </label>
+        </div>
+      </div>
+      <!-- Per-device sections (built by JS) -->
+      <div id="ric-device-sections" class="space-y-3"></div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">
+          Overall notes <span id="ric-notes-required-badge" class="text-red-500">*</span>
+          <span id="ric-notes-optional-badge" class="text-slate-400 font-normal hidden">(optional)</span>
+        </label>
+        <textarea id="ric-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Overall call notes…"></textarea>
+      </div>
+      {{ attachment_section('ric') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="ric-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('robot-issue-call-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="ric-save" type="button" onclick="saveRobotIssueCall()" class="flex-1 px-4 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Robot Issue Visit modal ────────────────────────────────────────────── -->
+<div id="robot-issue-visit-modal" data-date-error="riv-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Robot Issue — Engineer Visit</h3>
+      <button onclick="hideModal('robot-issue-visit-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div id="riv-context-banner" class="px-4 py-2 rounded-xl text-sm font-medium bg-slate-50 text-slate-600 border border-slate-200"></div>
+      <div id="riv-bp-banner" class="hidden px-4 py-2 rounded-xl text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">Broken Protocol — Fault Documentation Only. Record which devices are faulty; no device swaps will occur.</div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Visit Date/Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="riv-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+      </div>
+      <!-- Per-device outcome rows (built by JS) -->
+      <div id="riv-device-rows" class="space-y-4"></div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Additional Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="riv-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Overall visit notes…"></textarea>
+      </div>
+      {{ attachment_section('riv') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="riv-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('robot-issue-visit-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="riv-save" type="button" onclick="saveRobotIssueVisit()" class="flex-1 px-4 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Adverse Event Follow-up modal ────────────────────────────────────────── -->
+<div id="adverse-event-followup-modal" data-date-error="aef-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 id="aef-title" class="text-xl font-bold text-slate-800">Adverse Event Follow-up</h3>
+      <button onclick="hideModal('adverse-event-followup-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <!-- Context banner: lists AEs covered -->
+      <div id="aef-context-banner" class="px-4 py-2 rounded-xl text-sm bg-slate-50 text-slate-600 border border-slate-200 space-y-1"></div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call Date/Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="aef-date" data-event-id="adverse_event_followup" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        <p id="aef-date-lock-hint" class="hidden mt-1 text-xs text-slate-500"><i class="fas fa-lock text-[10px] mr-1"></i><span id="aef-date-lock-hint-text"></span></p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call initiated by <span class="text-red-500">*</span></label>
+        <div class="flex gap-2" id="aef-initiator-group">
+          <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="aef-initiator" value="therapist" class="w-4 h-4 text-blue-500"> Therapist <span class="text-xs text-slate-400">(scheduled follow-up)</span>
+          </label>
+          <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="aef-initiator" value="patient" class="w-4 h-4 text-blue-500"> Patient <span class="text-xs text-slate-400">(called about AE)</span>
+          </label>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Duration (minutes) <span class="text-red-500">*</span></label>
+          <input type="number" id="aef-duration" min="1" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="e.g. 15">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Call Mode <span class="text-red-500">*</span></label>
+          <div class="flex gap-2" id="aef-call-mode-group">
+            <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="aef-call-mode" value="audio" class="w-4 h-4 text-blue-500"> Audio
+            </label>
+            <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+              <input type="radio" name="aef-call-mode" value="video" class="w-4 h-4 text-blue-500"> Video
+            </label>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-red-500">*</span></label>
+        <textarea id="aef-notes" rows="3" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Notes from the follow-up call…"></textarea>
+      </div>
+      <!-- Per-AE resolution rows (populated dynamically) -->
+      <div>
+        <p class="text-sm font-medium text-slate-700 mb-2">Adverse event resolutions <span class="text-red-500">*</span></p>
+        <div id="aef-ae-rows" class="space-y-3"></div>
+      </div>
+      <!-- Follow-up visit scheduling -->
+      <div id="aef-schedule-visit-wrap" class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="aef-schedule-visit" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a follow-up visit</span>
+        </label>
+        <div id="aef-visit-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aef-visit-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <!-- Clinical visit scheduling -->
+      <div id="aef-schedule-clinical-wrap" class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="aef-schedule-clinical" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a clinical visit</span>
+        </label>
+        <div id="aef-clinical-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aef-clinical-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      {{ attachment_section('aef') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="aef-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('adverse-event-followup-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="aef-save" type="button" onclick="saveAdverseEventFollowup()" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Adverse Event Follow-up Visit modal ──────────────────────────────────── -->
+<div id="ae-followup-visit-modal" data-date-error="aefv-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 id="aefv-title" class="text-xl font-bold text-slate-800">Adverse Event Follow-up Visit</h3>
+      <button onclick="hideModal('ae-followup-visit-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div id="aefv-context-banner" class="px-4 py-2 rounded-xl text-sm bg-slate-50 text-slate-600 border border-slate-200 space-y-1"></div>
+      <!-- Time fields. In normal mode both Visit Start + Visit End show. In
+           ad-hoc/locked mode (e.g., triggered from D29), only the single Visit
+           Date/Time field shows, locked to the parent's completion date. -->
+      <div id="aefv-times-grid" class="grid grid-cols-2 gap-3">
+        <div id="aefv-start-wrap">
+          <label id="aefv-start-label" class="block text-sm font-medium text-slate-700 mb-1">Visit Start <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aefv-start" data-event-id="adverse_event_followup_visit" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+          <p id="aefv-start-lock-hint" class="hidden mt-1 text-xs text-slate-500"><i class="fas fa-lock text-[10px] mr-1"></i><span id="aefv-start-lock-hint-text"></span></p>
+        </div>
+        <div id="aefv-end-wrap">
+          <label class="block text-sm font-medium text-slate-700 mb-1">Visit End <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aefv-end" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <div>
+        <p class="text-sm font-medium text-slate-700 mb-2">Per adverse event</p>
+        <div id="aefv-ae-rows" class="space-y-3"></div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Visit notes</label>
+        <textarea id="aefv-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Optional visit-level notes…"></textarea>
+      </div>
+      <!-- Follow-up visit scheduling -->
+      <div id="aefv-schedule-visit-wrap" class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="aefv-schedule-visit" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a follow-up visit</span>
+        </label>
+        <div id="aefv-visit-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aefv-visit-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <!-- Clinical visit scheduling -->
+      <div id="aefv-schedule-clinical-wrap" class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="aefv-schedule-clinical" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a clinical visit</span>
+        </label>
+        <div id="aefv-clinical-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aefv-clinical-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      {{ attachment_section('aefv') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="aefv-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="_cancelAeVisit('aefv')" class="px-4 py-3 border border-red-200 rounded-xl text-red-600 font-medium hover:bg-red-50 text-sm">Cancel Visit</button>
+        <button type="button" onclick="hideModal('ae-followup-visit-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Close</button>
+        <button id="aefv-save" type="button" onclick="saveAeFollowupVisit()" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Adverse Event Clinical Visit modal ────────────────────────────────────── -->
+<div id="ae-clinical-visit-modal" data-date-error="aecv-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 id="aecv-title" class="text-xl font-bold text-slate-800">Adverse Event Clinical Visit</h3>
+      <button onclick="hideModal('ae-clinical-visit-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div id="aecv-context-banner" class="px-4 py-2 rounded-xl text-sm bg-slate-50 text-slate-600 border border-slate-200 space-y-1"></div>
+      <div class="grid grid-cols-2 gap-3">
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Visit Start <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aecv-start" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Visit End <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aecv-end" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <div>
+        <p class="text-sm font-medium text-slate-700 mb-2">Per adverse event</p>
+        <div id="aecv-ae-rows" class="space-y-3"></div>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Visit notes</label>
+        <textarea id="aecv-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Optional visit-level notes…"></textarea>
+      </div>
+      <!-- Follow-up visit scheduling -->
+      <div id="aecv-schedule-visit-wrap" class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="aecv-schedule-visit" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a follow-up visit</span>
+        </label>
+        <div id="aecv-visit-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aecv-visit-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <!-- Clinical visit scheduling -->
+      <div id="aecv-schedule-clinical-wrap" class="border border-slate-200 rounded-xl p-4 space-y-3">
+        <label class="flex items-center gap-2 cursor-pointer select-none">
+          <input type="checkbox" id="aecv-schedule-clinical" class="w-4 h-4 rounded border-slate-300 accent-blue-600">
+          <span class="text-sm font-medium text-slate-700">Schedule a clinical visit</span>
+        </label>
+        <div id="aecv-clinical-date-wrap" class="hidden pl-6">
+          <label class="block text-xs font-medium text-slate-600 mb-1">Target date/time <span class="text-red-500">*</span></label>
+          <input type="datetime-local" id="aecv-clinical-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      {{ attachment_section('aecv') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="aecv-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="_cancelAeVisit('aecv')" class="px-4 py-3 border border-red-200 rounded-xl text-red-600 font-medium hover:bg-red-50 text-sm">Cancel Visit</button>
+        <button type="button" onclick="hideModal('ae-clinical-visit-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Close</button>
+        <button id="aecv-save" type="button" onclick="saveAeClinicalVisit()" class="flex-1 px-4 py-3 bg-red-600 text-white rounded-xl font-medium hover:bg-red-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Resolve Robot Issue Visit modal ───────────────────────────────────────── -->
+<div id="resolve-robot-issue-visit-modal" data-date-error="rriv-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-lg w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Robot Issue — Replacement Visit</h3>
+      <button onclick="hideModal('resolve-robot-issue-visit-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <div id="rriv-context-banner" class="px-4 py-2 rounded-xl text-sm font-medium bg-slate-50 text-slate-600 border border-slate-200"></div>
+      <div id="rriv-bp-banner" class="hidden px-4 py-2 rounded-xl text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">Broken Protocol — Fault Documentation Only. Record which devices are faulty; no replacements will be assigned.</div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Visit Date/Time <span class="text-red-500">*</span></label>
+        <input type="datetime-local" id="rriv-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" required>
+      </div>
+      <div id="rriv-normal-section">
+        <!-- Per taken-back device rows (built by JS) -->
+        <div id="rriv-device-rows" class="space-y-3"></div>
+        <!-- Optional other device section (built by JS) -->
+        <div id="rriv-other-device-section" class="hidden"></div>
+        <div>
+          <label class="block text-sm font-medium text-slate-700 mb-1">Can resume from <span class="text-red-500">*</span></label>
+          <p class="text-xs text-slate-500 mb-1">Earliest date training can resume.</p>
+          <input type="date" id="rriv-resume-date" data-date-rule="scheduling" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300">
+        </div>
+      </div>
+      <!-- BP fault-documentation rows (built by JS in BP mode) -->
+      <div id="rriv-bp-device-rows" class="space-y-3"></div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="rriv-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300 resize-none" placeholder="Notes about the replacement visit…"></textarea>
+      </div>
+      {{ attachment_section('rriv') }}
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="rriv-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('resolve-robot-issue-visit-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="rriv-save" type="button" onclick="saveResolveRobotIssueVisit()" class="flex-1 px-4 py-3 bg-orange-600 text-white rounded-xl font-medium hover:bg-orange-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Other Device Issue Modal ─────────────────────────────────────────────── -->
+<!-- Other Device Issue — Engineer Call Modal -->
+<div id="other-device-issue-modal" data-date-error="odi-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Other Device Issue — Engineer Call</h3>
+      <button onclick="hideModal('other-device-issue-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <!-- Context banner -->
+      <div id="odi-context" class="hidden px-4 py-3 bg-purple-50 rounded-xl border border-purple-100 text-sm text-slate-600"></div>
+      <div id="odi-bp-banner" class="hidden px-4 py-2 rounded-xl text-sm font-medium bg-amber-50 text-amber-700 border border-amber-200">
+        <i class="fas fa-exclamation-triangle mr-1"></i>Training is broken protocol — document faulty devices only. No outcome decision needed.
+      </div>
+      <!-- Call date -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call Date <span class="text-red-400">*</span></label>
+        <input type="datetime-local" id="odi-completion-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" required>
+      </div>
+      <!-- Issue occur date -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Issue First Occurred <span class="text-red-400">*</span></label>
+        <input type="date" id="odi-issue-occur-date" required class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-300">
+        <p class="text-xs text-slate-400 mt-1">When did the problem first start?</p>
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Call Mode <span class="text-red-400">*</span></label>
+        <div class="flex gap-2" id="odi-call-mode-group">
+          <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="odi-call-mode" value="audio" class="w-4 h-4 text-purple-500"> Audio
+          </label>
+          <label class="flex-1 flex items-center justify-center gap-2 px-3 py-2 border border-slate-200 rounded-xl text-sm cursor-pointer hover:bg-slate-50">
+            <input type="radio" name="odi-call-mode" value="video" class="w-4 h-4 text-purple-500"> Video
+          </label>
+        </div>
+      </div>
+      <!-- Per-device sections (built by JS) -->
+      <div id="odi-device-rows" class="space-y-3"></div>
+      <!-- Overall notes -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="odi-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none" placeholder="Overall notes…"></textarea>
+      </div>
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="odi-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('other-device-issue-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button type="button" id="odi-save" onclick="saveOtherDeviceIssueCall()" class="flex-1 px-4 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Other Device Issue — Engineer Visit Modal -->
+<div id="other-device-issue-visit-modal" data-date-error="odiv-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-2xl w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Other Device Issue — Engineer Visit</h3>
+      <button onclick="hideModal('other-device-issue-visit-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <!-- Context banner -->
+      <div id="odiv-context" class="hidden px-4 py-3 bg-purple-50 rounded-xl border border-purple-100 text-sm text-slate-600"></div>
+      <div id="odiv-bp-banner" class="hidden px-4 py-2 rounded-xl text-sm font-medium bg-amber-50 text-amber-800 border border-amber-200">Broken Protocol — Fault Documentation Only. Record which devices are faulty; no device swaps will occur.</div>
+      <!-- Issue occur date (read-only from call) -->
+      <div id="odiv-issue-occur-row" class="hidden">
+        <label class="block text-sm font-medium text-slate-700 mb-1">Issue First Occurred</label>
+        <div id="odiv-issue-occur-date" class="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-600 font-mono"></div>
+      </div>
+      <!-- Visit date -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Visit Date <span class="text-red-400">*</span></label>
+        <input type="datetime-local" id="odiv-completion-date" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-300" required>
+      </div>
+      <!-- Per-device outcome rows (normal mode) -->
+      <div id="odiv-normal-section">
+        <div id="odiv-device-rows" class="space-y-3"></div>
+      </div>
+      <!-- BP fault-documentation rows (built by JS in BP mode) -->
+      <div id="odiv-bp-device-rows" class="space-y-3"></div>
+      <!-- Notes -->
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Notes <span class="text-slate-400 font-normal">(optional)</span></label>
+        <textarea id="odiv-notes" rows="2" class="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-purple-300 resize-none" placeholder="Overall visit notes…"></textarea>
+      </div>
+    </div>
+    <div class="px-6 pt-3 pb-6 shrink-0 border-t border-slate-100">
+      <p id="odiv-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('other-device-issue-visit-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button type="button" id="odiv-save" onclick="saveOtherDeviceIssueVisit()" class="flex-1 px-4 py-3 bg-purple-600 text-white rounded-xl font-medium hover:bg-purple-700">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Create Note modal ───────────────────────────────────────────────────── -->
+<div id="note-modal" data-date-error="note-error" class="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4" style="display:none">
+  <div class="bg-white rounded-2xl shadow-xl max-w-3xl w-full flex flex-col" style="max-height:90vh">
+    <div class="flex items-center justify-between px-6 pt-6 pb-4 shrink-0">
+      <h3 class="text-xl font-bold text-slate-800">Create Note</h3>
+      <button onclick="hideModal('note-modal')" class="text-slate-400 hover:text-slate-600"><i class="fas fa-times text-lg"></i></button>
+    </div>
+    <div class="overflow-y-auto flex-1 px-6 space-y-4 pb-2">
+      <p class="text-xs text-slate-400">Notes are permanent — they cannot be edited or deleted. To correct one, add a new note referencing it by its number.</p>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Title <span class="text-red-500">*</span></label>
+        <input type="text" id="note-title" maxlength="200" class="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-300" placeholder="Short title for this note…">
+      </div>
+      <div>
+        <label class="block text-sm font-medium text-slate-700 mb-1">Note <span class="text-red-500">*</span></label>
+        <div id="note-editor" style="min-height:220px"></div>
+      </div>
+      {{ attachment_section('note') }}
+    </div>
+    <div class="px-6 pt-4 pb-6 shrink-0 border-t border-slate-100">
+      <p id="note-error" class="text-sm text-red-500 hidden mb-3"></p>
+      <div class="flex gap-3">
+        <button type="button" onclick="hideModal('note-modal')" class="flex-1 px-4 py-3 border border-slate-200 rounded-xl text-slate-600 font-medium hover:bg-slate-50">Cancel</button>
+        <button id="note-save" type="button" onclick="saveNote()" class="flex-1 px-4 py-3 bg-blue-600 text-white rounded-xl font-medium hover:bg-blue-700">Save Note</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const PATIENT_HOMER_ID = {{ homer_id | tojson }};
+const PATIENT_PLACE = {{ place | tojson }};
+// Date Rule Framework spec — rendered server-side so client resolver stays in
+// lock-step with utils/date_validation.py. See CLAUDE.md → "Date Rule Framework".
+window.DATE_RULES = {{ date_rules | tojson }};</script>
+<!-- PDF generation now uses server-side Puppeteer rendering (no client-side libraries needed) -->
+<link href="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.snow.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/quill@2/dist/quill.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify@3/dist/purify.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<script src="{{ url_for('static', filename='js/app/patient_detail.js') }}?v={{ js_version }}"></script>
+{% endblock %}

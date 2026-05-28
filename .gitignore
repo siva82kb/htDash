@@ -34,3 +34,22 @@ htmlcov/
 # OS-specific files
 .DS_Store
 Thumbs.db
+
+# Patient and clinical data
+data/
+#nodejs
+node_modules/
+META-DATA/
+EXERCISE_SS/
+.agents/
+
+# Analytical and security review documents
+ANALYSIS_INDEX.txt
+COMPREHENSIVE_ANALYSIS_SUMMARY.md
+LOGICAL_FLOWS_ANALYSIS.md
+LOGICAL_LOOPHOLES.md
+LOGICAL_LOOPHOLES_SUMMARY.txt
+SECURITY_ANALYSIS.md
+SECURITY_CHECKLIST.md
+SECURITY_FIXES_CODE.md
+SECURITY_SUMMARY.txt

@@ -1,13 +1,14 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, session as flask_session
 from config import Config
 import json
 import os
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, date
 from models.user import current_session
 
 bp = Blueprint('auth', __name__)
+
 
 # ── In-process login rate limiter ─────────────────────────────────────────────
 # Stores {ip: [timestamp, ...]} for failed attempts within the rolling window.
@@ -59,14 +60,40 @@ def log_user_activity(action, data=None, user_id=None):
     
     log_line = f"{date_str} {time_str} INFO >> {message}"
     
+    if Config.USE_S3:
+        from utils.s3_store import s3_append_text
+        try:
+            s3_append_text(f"user_logs/{safe_user_id}.txt", log_line + "\n")
+        except Exception as e:
+            print(f"Error logging user activity (S3): {e}")
+        return
+
     os.makedirs(Config.LOG_DIR, exist_ok=True)
     filename = os.path.join(Config.LOG_DIR, f"{safe_user_id}.txt")
-    
+
     try:
         with open(filename, "a") as f:
             f.write(log_line + "\n")
     except Exception as e:
         print(f"Error logging user activity: {e}")
+
+
+def _check_broken_protocol_on_login(login_place: str, loginid: str, session_id: int) -> None:
+    """Detect newly-broken patients and stamp brokenProtocolDate + log entry."""
+    try:
+        from utils.data_access import (
+            iter_patients_with_folder, derive_status,
+            write_patient_meta, write_patient_log,
+        )
+        today_str = date.today().isoformat()
+        for hospital_folder, homer_id, patient in iter_patients_with_folder(login_place):
+            if derive_status(patient) == 'broken_protocol' and not patient.get('brokenProtocolDate'):
+                patient['brokenProtocolDate'] = today_str
+                write_patient_meta(hospital_folder, homer_id, patient)
+                write_patient_log(hospital_folder, homer_id, loginid, session_id,
+                                  'Broken protocol detected')
+    except Exception as e:
+        print(f'Warning: broken protocol check failed: {e}')
 
 
 def _check_rate_limit(ip: str) -> bool:
@@ -116,6 +143,18 @@ def validate_login():
             login_place=user_data["place"],
             privilege=user_data.get("privilege", "user")
         )
+        flask_session['loginid']   = loginid
+        flask_session['privilege'] = user_data.get('privilege', 'user')
+        session_id = -1
+        try:
+            from utils.data_access import open_session, get_hospital_folder
+            hospital_folder = get_hospital_folder(user_data['place'])
+            if hospital_folder:
+                session_id = open_session(hospital_folder, loginid)
+                flask_session['session_id'] = session_id
+        except Exception as e:
+            print(f'Warning: could not open session: {e}')
+        _check_broken_protocol_on_login(user_data['place'], loginid, session_id)
         return jsonify({
             "status": "success",
             "loginid": loginid,
@@ -127,11 +166,40 @@ def validate_login():
         return jsonify({"status": "error", "message": "Invalid Login ID or Password."}), 401
 
 
+@bp.route("/api/me", methods=["GET"])
+def me():
+    from flask import session as flask_session
+    login_place = flask_session.get('login_place')
+    if not login_place:
+        return jsonify({"status": "error", "message": "Not authenticated"}), 401
+    return jsonify({
+        "status": "success",
+        "loginId": flask_session.get('loginid', login_place),
+        "place": login_place,
+        "privilege": flask_session.get('privilege', 'user')
+    })
+
+
+def _do_close_session(reason: str) -> None:
+    """Close the current Flask session's session log entry."""
+    from utils.data_access import close_session, get_hospital_folder
+    hospital_folder = get_hospital_folder(flask_session.get('login_place', ''))
+    session_id = flask_session.get('session_id')
+    loginid    = flask_session.get('loginid')
+    if hospital_folder and session_id and loginid:
+        close_session(hospital_folder, loginid, session_id, reason)
+
+
 @bp.route("/logout", methods=["POST"])
 def logout():
-    from flask import session as flask_session
+    try:
+        _do_close_session('user_initiated')
+    except Exception as e:
+        print(f'Warning: could not close session: {e}')
     flask_session.clear()
     return jsonify({"status": "success"})
+
+
 
 
 @bp.route("/track-activity", methods=["POST"])

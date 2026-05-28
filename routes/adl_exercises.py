@@ -80,15 +80,20 @@ def print_adl_exercises(user_id):
             place = current_session.place_info.get(user_id, current_session.login_place)
         else:
             place = current_session.login_place
-        file_path = os.path.join(
-            Config.META_DATA_PATH, place, user_id, "adl_prescriptions", "latest.json"
-        )
 
-        if not os.path.exists(file_path):
-            return jsonify({"error": "No ADL prescription found"}), 404
-
-        with open(file_path, "r") as f:
-            prescription = json.load(f)
+        if Config.USE_S3:
+            from utils.s3_store import s3_read_json
+            prescription = s3_read_json(f"{place}/{user_id}/adl_prescriptions/latest.json")
+            if not prescription:
+                return jsonify({"error": "No ADL prescription found"}), 404
+        else:
+            file_path = os.path.join(
+                Config.META_DATA_PATH, place, user_id, "adl_prescriptions", "latest.json"
+            )
+            if not os.path.exists(file_path):
+                return jsonify({"error": "No ADL prescription found"}), 404
+            with open(file_path, "r") as f:
+                prescription = json.load(f)
 
         # Create PDF
         buffer = BytesIO()
@@ -188,109 +193,76 @@ def save_adl_prescription():
         if not user_id:
             return jsonify({"status": "error", "message": "Missing user ID"}), 400
 
-        # Determine base path
         if current_session.is_admin():
             place = current_session.place_info.get(user_id, current_session.login_place)
-            base_path = os.path.join(Config.META_DATA_PATH, place, user_id)
         else:
-            base_path = os.path.join(
-                Config.META_DATA_PATH, current_session.login_place, user_id
-            )
+            place = current_session.login_place
 
-        # Create ADL folder
-        adl_folder = os.path.join(base_path, "adl_prescriptions")
-        os.makedirs(adl_folder, exist_ok=True)
-
-        # Generate timestamp for filename
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        file_path = os.path.join(adl_folder, f"prescription_{timestamp}.json")
 
-        # Preserve existing timeRecords from the latest prescription before overwriting
-        latest_path = os.path.join(adl_folder, "latest.json")
-        if os.path.exists(latest_path):
-            try:
-                with open(latest_path, "r") as f:
-                    existing_data = json.load(f)
-                existing_exercises = existing_data.get("exercises", existing_data.get("selected_exercises", []))
-                # Union-merge timeRecords: combine client records and file records,
-                # deduplicating by (date, startTime, endTime) so that neither a
-                # background save race nor a tab-reload causes data loss or duplication.
-                for new_ex in selected_exercises:
-                    for existing_ex in existing_exercises:
-                        if new_ex.get("id") != existing_ex.get("id"):
-                            continue
-                        file_records = existing_ex.get("timeRecords") or []
-                        client_records = new_ex.get("timeRecords") or []
-                        if not file_records:
-                            break  # nothing on disk to merge in
-                        seen = {
-                            (r.get("date"), r.get("startTime"), r.get("endTime"))
-                            for r in client_records
-                        }
-                        for r in file_records:
-                            key = (r.get("date"), r.get("startTime"), r.get("endTime"))
-                            if key not in seen:
-                                client_records.append(r)
-                                seen.add(key)
-                        new_ex["timeRecords"] = client_records
-                        break
-            except Exception:
-                pass  # Non-fatal — proceed without merging
+        # Merge existing timeRecords before overwriting
+        if Config.USE_S3:
+            from utils.s3_store import s3_read_json, s3_write_json
+            existing_data = s3_read_json(f"{place}/{user_id}/adl_prescriptions/latest.json") or {}
+        else:
+            latest_path = os.path.join(Config.META_DATA_PATH, place, user_id,
+                                       "adl_prescriptions", "latest.json")
+            existing_data = {}
+            if os.path.exists(latest_path):
+                try:
+                    with open(latest_path) as f:
+                        existing_data = json.load(f)
+                except Exception:
+                    pass
 
-        # Save to file - include both keys for compatibility
+        existing_exercises = existing_data.get("exercises", existing_data.get("selected_exercises", []))
+        for new_ex in selected_exercises:
+            for existing_ex in existing_exercises:
+                if new_ex.get("id") != existing_ex.get("id"):
+                    continue
+                file_records = existing_ex.get("timeRecords") or []
+                client_records = new_ex.get("timeRecords") or []
+                if not file_records:
+                    break
+                seen = {(r.get("date"), r.get("startTime"), r.get("endTime")) for r in client_records}
+                for r in file_records:
+                    k = (r.get("date"), r.get("startTime"), r.get("endTime"))
+                    if k not in seen:
+                        client_records.append(r)
+                        seen.add(k)
+                new_ex["timeRecords"] = client_records
+                break
+
         prescription_data = {
             "user_id": user_id,
-            # "selected_exercises": selected_exercises,
-            "exercises": selected_exercises,  # Include for frontend compatibility
-            "created_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "exercises": selected_exercises,
+            "created_at": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
             "version": timestamp,
         }
 
-        with open(file_path, "w") as f:
-            json.dump(prescription_data, f, indent=2)
-
-        # Also save as latest.json for easy access
-        latest_path = os.path.join(adl_folder, "latest.json")
-        import shutil
-
-        shutil.copy2(file_path, latest_path)
-
-        # Upload to S3
-        if current_session.is_admin():
-            place = current_session.place_info.get(user_id, current_session.login_place)
-            s3_key = (
-                f"{place}/{user_id}/adl_prescriptions/prescription_{timestamp}.json"
-            )
-            s3_latest_key = f"{place}/{user_id}/adl_prescriptions/latest.json"
+        if Config.USE_S3:
+            s3_prefix = f"{place}/{user_id}/adl_prescriptions"
+            s3_write_json(f"{s3_prefix}/prescription_{timestamp}.json", prescription_data)
+            s3_write_json(f"{s3_prefix}/latest.json", prescription_data)
         else:
-            s3_key = f"{current_session.login_place}/{user_id}/adl_prescriptions/prescription_{timestamp}.json"
-            s3_latest_key = (
-                f"{current_session.login_place}/{user_id}/adl_prescriptions/latest.json"
-            )
-
-        try:
-            # Upload timestamped version
-            command = [
-                "aws",
-                "s3",
-                "cp",
-                file_path,
-                f"s3://{Config.BUCKET_NAME}/{s3_key}",
-            ]
-            subprocess.run(command, capture_output=True, text=True)
-
-            # Upload latest version
-            command = [
-                "aws",
-                "s3",
-                "cp",
-                latest_path,
-                f"s3://{Config.BUCKET_NAME}/{s3_latest_key}",
-            ]
-            subprocess.run(command, capture_output=True, text=True)
-
-        except Exception as s3_error:
-            print(f"S3 upload error: {s3_error}")
+            import shutil
+            base_path = os.path.join(Config.META_DATA_PATH, place, user_id)
+            adl_folder = os.path.join(base_path, "adl_prescriptions")
+            os.makedirs(adl_folder, exist_ok=True)
+            file_path = os.path.join(adl_folder, f"prescription_{timestamp}.json")
+            with open(file_path, "w") as f:
+                json.dump(prescription_data, f, indent=2)
+            shutil.copy2(file_path, os.path.join(adl_folder, "latest.json"))
+            try:
+                s3_prefix = f"{place}/{user_id}/adl_prescriptions"
+                subprocess.run(["aws", "s3", "cp", file_path,
+                                f"s3://{Config.BUCKET_NAME}/{s3_prefix}/prescription_{timestamp}.json"],
+                               capture_output=True, text=True)
+                subprocess.run(["aws", "s3", "cp", os.path.join(adl_folder, "latest.json"),
+                                f"s3://{Config.BUCKET_NAME}/{s3_prefix}/latest.json"],
+                               capture_output=True, text=True)
+            except Exception as s3_error:
+                print(f"S3 upload error: {s3_error}")
 
         return jsonify(
             {
@@ -414,74 +386,56 @@ def get_adl_prescription(user_id):
         if not current_session.login_place:
             return jsonify({"status": "error", "message": "Not logged in"}), 401
 
-        # Determine file path
         if current_session.is_admin():
             place = current_session.place_info.get(user_id, current_session.login_place)
         else:
             place = current_session.login_place
 
-        latest_path = os.path.join(
-            Config.META_DATA_PATH,
-            place,
-            user_id,
-            "adl_prescriptions",
-            "latest.json",
-        )
+        if Config.USE_S3:
+            from utils.s3_store import s3_read_json, s3_list_prefix
+            s3_prefix = f"{place}/{user_id}/adl_prescriptions"
+            prescription_data = s3_read_json(f"{s3_prefix}/latest.json")
+            if not prescription_data:
+                return jsonify({"status": "success", "has_prescription": False})
+            all_versions = []
+            for key in s3_list_prefix(s3_prefix + "/"):
+                fname = key.split("/")[-1]
+                if fname.startswith("prescription_") and fname.endswith(".json"):
+                    vdata = s3_read_json(key) or {}
+                    vexercises = vdata.get("selected_exercises") or vdata.get("exercises", [])
+                    all_versions.append({
+                        "timestamp": vdata.get("version", fname.replace("prescription_","").replace(".json","")),
+                        "created_at": vdata.get("created_at", ""),
+                        "exercise_count": len(vexercises),
+                    })
+        else:
+            adl_folder  = os.path.join(Config.META_DATA_PATH, place, user_id, "adl_prescriptions")
+            latest_path = os.path.join(adl_folder, "latest.json")
 
-        adl_folder = os.path.join(
-            Config.META_DATA_PATH,
-            place,
-            user_id,
-            "adl_prescriptions",
-        )
+            if not os.path.exists(latest_path):
+                return jsonify({"status": "success", "has_prescription": False})
 
-        # If no prescription exists
-        if not os.path.exists(latest_path):
-            return jsonify({"status": "success", "has_prescription": False})
+            with open(latest_path, "r") as f:
+                prescription_data = json.load(f)
 
-        # Load latest prescription
-        with open(latest_path, "r") as f:
-            prescription_data = json.load(f)
+            all_versions = []
+            if os.path.exists(adl_folder):
+                for file in os.listdir(adl_folder):
+                    if file.startswith("prescription_") and file.endswith(".json") and file != "latest.json":
+                        try:
+                            with open(os.path.join(adl_folder, file)) as vf:
+                                version_data = json.load(vf)
+                            vexercises = version_data.get("selected_exercises") or version_data.get("exercises", [])
+                            all_versions.append({
+                                "timestamp": version_data.get("version", file.replace("prescription_","").replace(".json","")),
+                                "created_at": version_data.get("created_at", ""),
+                                "exercise_count": len(vexercises),
+                            })
+                        except Exception:
+                            pass
 
         # Handle both possible keys
         exercises = prescription_data.get("selected_exercises") or prescription_data.get("exercises", [])
-
-        # --------------------------
-        # Get all versions
-        # --------------------------
-        all_versions = []
-
-        if os.path.exists(adl_folder):
-            for file in os.listdir(adl_folder):
-                if (
-                    file.startswith("prescription_")
-                    and file.endswith(".json")
-                    and file != "latest.json"
-                ):
-                    version_path = os.path.join(adl_folder, file)
-
-                    try:
-                        with open(version_path, "r") as vf:
-                            version_data = json.load(vf)
-
-                        version_exercises = (
-                            version_data.get("selected_exercises")
-                            or version_data.get("exercises", [])
-                        )
-
-                        all_versions.append(
-                            {
-                                "timestamp": version_data.get(
-                                    "version",
-                                    file.replace("prescription_", "").replace(".json", ""),
-                                ),
-                                "created_at": version_data.get("created_at", ""),
-                                "exercise_count": len(version_exercises),
-                            }
-                        )
-
-                    except Exception:
-                        pass
 
         # Sort newest first
         all_versions.sort(key=lambda x: x.get("timestamp", ""), reverse=True)

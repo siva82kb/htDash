@@ -1,0 +1,62 @@
+{
+  "$schema_version": 1,
+  "default_completion_rule": {
+    "not_before": ["activationDate", "enrollDate"],
+    "not_after":  ["today"]
+  },
+  "default_scheduling_rule": {
+    "not_before": ["today"]
+  },
+  "events": {
+    "exp_device_install": {
+      "not_before": ["enrollDate"],
+      "not_after":  ["enrollDate + 5d", "today"]
+    },
+    "activation": {
+      "experimental": {
+        "not_before": ["enrollDate", "event:exp_device_install"],
+        "not_after":  ["enrollDate + 5d", "today"]
+      },
+      "control": {
+        "not_before": ["enrollDate"],
+        "not_after":  ["enrollDate + 5d", "today"]
+      }
+    },
+    "followup_call_d07": {
+      "not_before": ["event:home_visit_d03"],
+      "not_after":  ["activationDate + 19d", "today"]
+    },
+    "followup_call_d21": {
+      "not_before": ["event:followup_call_d07"],
+      "not_after":  ["activationDate + 26d", "today"]
+    },
+    "training_completion_d29": {
+      "not_before": ["activationDate + 28d"],
+      "not_after":  ["today"]
+    },
+    "a1_assessment": {
+      "not_before": ["activationDate + 28d"],
+      "not_after":  ["today"]
+    },
+    "a2_assessment": {
+      "not_before": ["event:a1_assessment"],
+      "not_after":  ["today"]
+    },
+    "adverse_event_followup": {
+      "not_before": ["event:adverse_event"],
+      "not_after":  ["today"]
+    },
+    "adverse_event_followup_visit": {
+      "not_before": ["event:adverse_event"],
+      "not_after":  ["today"]
+    },
+    "schedule_a1_call": {
+      "not_before": ["event:training_completion_d29"],
+      "not_after":  ["today"]
+    },
+    "schedule_a2_call": {
+      "not_before": ["activationDate + 172d"],
+      "not_after":  ["today"]
+    }
+  }
+}

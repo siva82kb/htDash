@@ -3,51 +3,174 @@
    HOMER Clinical Dashboard
    ============================================================ */
 
+    function initPage() {
+      loadDashboard();
+      loadEvents();
+      _startClock();
+    }
+
+    function _startClock() {
+      function _tick() {
+        const now  = new Date();
+        const date = now.toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+        const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+        const el   = document.getElementById('dashboard-clock');
+        if (el) el.textContent = `${date}  ${time}`;
+      }
+      _tick();
+      setInterval(_tick, 60000);
+    }
+
     // Dashboard Data
     async function loadDashboard() {
       try {
-        const response = await fetch('/get_userId', { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: `search_term=Pluto&LoginId=${currentUser.loginId}&PRIVILEGE=${currentUser.privilege}` });
-        const data = await response.json();
-        if (data.hospital_info) {
-          const patients = data.hospital_info;
-          document.getElementById('stat-total').textContent = patients.length;
-          document.getElementById('stat-experimental').textContent = patients.filter(p => p.role?.toLowerCase() === 'experimental').length;
-          document.getElementById('stat-control').textContent = patients.filter(p => p.role?.toLowerCase() === 'control').length;
-          document.getElementById('stat-unassigned').textContent = patients.filter(p => !p.role || p.role?.toLowerCase() === 'unassigned').length;
+        const response = await fetch('/api/dashboard/stats');
+        if (!response.ok) throw new Error('Failed to load stats');
+        const stats = await response.json();
+        document.getElementById('stat-total').textContent              = stats.total;
+        document.getElementById('stat-experimental').textContent       = stats.experimental;
+        document.getElementById('stat-control').textContent            = stats.control;
+        document.getElementById('stat-unassigned').textContent         = stats.unassigned;
+        document.getElementById('stat-inactive').textContent           = stats.inactive;
+        document.getElementById('stat-active').textContent             = stats.active;
+        document.getElementById('stat-paused').textContent             = stats.paused;
+        document.getElementById('stat-post-training').textContent      = stats.post_training;
+        document.getElementById('stat-training-completed').textContent = stats.training_completed;
+        document.getElementById('stat-a1-completed').textContent       = stats.a1_completed;
+        document.getElementById('stat-all-completed').textContent      = stats.all_completed;
+        document.getElementById('stat-broken-protocol').textContent    = stats.broken_protocol;
+        document.getElementById('stat-discontinued').textContent       = stats.discontinued;
+      } catch (error) {
+        console.error('Error loading dashboard stats:', error);
+      }
+    }
 
-          // Count dropped out via patient events — reads discontinued flag + requiresDropout adverse events
-          // Excludes pre-enrolment discontinued (unassigned patients)
-          try {
-            const droppedRes = await fetch('/patient_events/dropped_patients');
-            const droppedData = await droppedRes.json();
-            const allDroppedIds = new Set((droppedData.droppedPatients || []));
-            // Filter out pre-enrolment discontinued (patients with no group assigned)
-            const droppedIds = new Set(
-              [...allDroppedIds].filter(id => {
-                const pt = patients.find(p => p.HospitalID === id || p.homerID === id);
-                if (!pt) return true; // unknown, include by default
-                const role = (pt.role || '').toLowerCase().trim();
-                return role !== '' && role !== 'unassigned';
-              })
-            );
-            droppedOutPatients = droppedIds;
-            document.getElementById('stat-dropped').textContent = droppedIds.size;
-          } catch(e) {
-            document.getElementById('stat-dropped').textContent = '0';
-          }
+    async function loadEvents() {
+      const overdueEl  = document.getElementById('overdue-events');
+      const upcomingEl = document.getElementById('upcoming-events');
+      try {
+        const [evRes, simRes] = await Promise.all([
+          fetch('/api/dashboard/events'),
+          fetch('/sim_cards/reminders').catch(() => null),
+        ]);
+        if (!evRes.ok) throw new Error('Failed to load events');
+        const { overdue, upcoming } = await evRes.json();
 
-          // Count trial-completed patients — last timeline event is marked completed
-          try {
-            const completedRes = await fetch('/patient_events/trial_completed_patients');
-            const completedData = await completedRes.json();
-            trialCompletedPatients = new Set(completedData.completedPatients || []);
-            document.getElementById('stat-completed').textContent = trialCompletedPatients.size;
-          } catch(e) {
-            document.getElementById('stat-completed').textContent = '0';
-          }
+        // SIM expiry injection
+        let expiredSims = [], expiringSims = [];
+        if (simRes?.ok) {
+          const simData = await simRes.json();
+          const sims = simData.reminders || [];
+          expiredSims  = sims.filter(s => s.isExpired);
+          expiringSims = sims.filter(s => !s.isExpired && s.daysUntilExpiry !== undefined && s.daysUntilExpiry <= 5);
         }
-        loadUpcomingOverdueEvents();
-      } catch (error) { console.error('Error loading dashboard:', error); }
+
+        const totalOverdue  = overdue.length  + expiredSims.length;
+        const totalUpcoming = upcoming.length + expiringSims.length;
+        document.getElementById('overdue-count').textContent  = totalOverdue;
+        document.getElementById('upcoming-count').textContent = totalUpcoming;
+
+        const simOverdueHtml = expiredSims.map(s => `
+          <div class="flex items-center justify-between px-4 py-3 rounded-xl border border-red-200 bg-red-50 gap-3">
+            <div class="min-w-0">
+              <div class="font-medium text-slate-800 text-sm truncate">
+                <i class="fas fa-sim-card mr-1.5 text-red-500"></i>SIM Expired — ${s.phoneNumber || '—'}
+              </div>
+              <div class="text-xs text-slate-500 mt-0.5">${s.network || '—'}${s.modemSerial ? ` · Modem: ${s.modemSerial}` : ''} · Expired ${new Date(s.expiryDate).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</div>
+            </div>
+            <span class="text-xs font-semibold text-red-600 whitespace-nowrap flex-shrink-0">Expired</span>
+          </div>`).join('');
+
+        const simUpcomingHtml = expiringSims.map(s => {
+          const d = s.daysUntilExpiry;
+          const whenLabel = d === 0 ? 'Today' : d === 1 ? 'Tomorrow' : `In ${d}d`;
+          const urgency   = d <= 1 ? 'border-red-200 bg-red-50' : 'border-amber-100 bg-amber-50';
+          const textColor = d <= 1 ? 'text-red-600' : 'text-amber-600';
+          return `
+          <div class="flex items-center justify-between px-4 py-3 rounded-xl border ${urgency} gap-3">
+            <div class="min-w-0">
+              <div class="font-medium text-slate-800 text-sm truncate">
+                <i class="fas fa-sim-card mr-1.5 text-amber-500"></i>SIM Expiring — ${s.phoneNumber || '—'}
+              </div>
+              <div class="text-xs text-slate-500 mt-0.5">${s.network || '—'}${s.modemSerial ? ` · Modem: ${s.modemSerial}` : ''} · Expires ${new Date(s.expiryDate).toLocaleDateString('en-GB',{day:'2-digit',month:'short'})}</div>
+            </div>
+            <span class="text-xs font-semibold ${textColor} whitespace-nowrap flex-shrink-0">${whenLabel}</span>
+          </div>`;
+        }).join('');
+
+        overdueEl.innerHTML  = (overdue.length || expiredSims.length)
+          ? (overdue.map(eventRow).join('') + simOverdueHtml)
+          : emptyState('check-circle', 'text-green-500', 'All clear — no overdue events');
+
+        upcomingEl.innerHTML = (upcoming.length || expiringSims.length)
+          ? (upcoming.map(eventRow).join('') + simUpcomingHtml)
+          : emptyState('calendar-check', 'text-slate-400', 'No events in the next 7 days');
+
+      } catch (e) {
+        console.error('Error loading events:', e);
+        overdueEl.innerHTML  = '<p class="text-sm text-red-500 text-center py-4">Error loading events</p>';
+        upcomingEl.innerHTML = '<p class="text-sm text-red-500 text-center py-4">Error loading events</p>';
+      }
+    }
+
+    function eventRow(ev) {
+      const sched = ev.scheduled_date;
+      const onHold = !!ev.on_hold;
+      const isActiveWindow = !!ev.active_window;
+      const isOverdue = !isActiveWindow && ev.days <= 0;
+      const isUpcoming = !isActiveWindow && (ev.days > 0 || onHold);
+      const refDate = Array.isArray(sched) ? (isActiveWindow || isOverdue ? sched[1] : sched[0]) : sched;
+      const d = new Date((refDate || '').replace(' ', 'T'));
+      const dateStr = d && !isNaN(d) ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : '—';
+      const abs = Math.abs(ev.days);
+      let whenLabel;
+      if (isActiveWindow) {
+        whenLabel = ev.days === 0 ? 'Due today' : `Due now · ${ev.days}d left`;
+      } else if (isOverdue) {
+        whenLabel = ev.days === 0 ? 'Today' : `${abs}d overdue`;
+      } else {
+        whenLabel = `Available from ${dateStr}`;
+      }
+      const urgency   = isOverdue      ? 'border-red-200 bg-red-50'
+                      : isActiveWindow  ? 'border-amber-200 bg-amber-50'
+                      : isUpcoming     ? 'border-slate-100 bg-slate-50'
+                      : 'border-slate-100 bg-slate-50';
+      const textColor = isOverdue      ? 'text-red-600'
+                      : isActiveWindow  ? 'text-amber-700'
+                      : isUpcoming     ? 'text-slate-400'
+                      : 'text-slate-500';
+
+      const blocked = ev.blocked_by && ev.blocked_by.length > 0;
+      const nonClickable = blocked || isUpcoming;
+      const tag     = nonClickable ? 'div' : 'a';
+      const href    = nonClickable ? '' : `href="/patients/${ev.homer_id}?action=${ev.id}"`;
+      const extra   = nonClickable ? '' : 'hover:shadow-md transition-shadow';
+      const lockIcon = blocked ? `<i class="fas fa-lock text-slate-400 text-[10px] mr-1"></i>` : '';
+      const mainLine = `
+        <div class="text-sm truncate flex items-center gap-1">
+          ${lockIcon}<span class="font-semibold text-blue-700">${ev.homer_id}</span>
+          <span class="text-slate-400">·</span>
+          <span class="font-medium text-slate-800">${ev.event_name}</span>
+        </div>`;
+      const rightLabel = blocked
+        ? `<span class="text-xs font-semibold text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0">Needs: ${ev.blocked_by[0]}</span>`
+        : onHold
+        ? `<span class="text-xs font-semibold text-slate-600 bg-white border border-slate-300 rounded-full px-2 py-0.5 whitespace-nowrap flex-shrink-0">On hold</span>`
+        : `<span class="text-xs font-semibold ${textColor} whitespace-nowrap">${whenLabel}</span>`;
+      return `
+        <${tag} ${href} class="flex items-center justify-between px-3 py-2.5 rounded-xl border ${urgency} gap-3 ${extra}">
+          <div class="min-w-0">
+            ${mainLine}
+            <div class="text-xs text-slate-500 mt-0.5">${dateStr}</div>
+          </div>
+          <div class="flex-shrink-0">
+            ${rightLabel}
+          </div>
+        </${tag}>`;
+    }
+
+    function emptyState(icon, colorClass, msg) {
+      return `<div class="flex flex-col items-center justify-center py-8 ${colorClass}"><i class="fas fa-${icon} text-2xl mb-2"></i><p class="text-sm">${msg}</p></div>`;
     }
 
     async function loadUpcomingOverdueEvents() {

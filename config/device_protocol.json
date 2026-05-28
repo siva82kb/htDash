@@ -1,0 +1,71 @@
+{
+  "pluto": {
+    "label": "Pluto",
+    "events": {
+      "assign":    { "label": "Assigned",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "available": { "label": "Available",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "faulty":    { "label": "Faulty",              "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": false },
+      "swap":      { "label": "Swapped",             "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": false },
+      "repair":    { "label": "Repaired",            "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": true  },
+      "retire":    { "label": "Retired",             "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "discarded": { "label": "Discarded",           "roles": ["admin"],            "state_change": true,  "closes_issue": true  }
+    }
+  },
+  "mars": {
+    "label": "Mars",
+    "events": {
+      "assign":    { "label": "Assigned",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "available": { "label": "Available",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "faulty":    { "label": "Faulty",              "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": false },
+      "swap":      { "label": "Swapped",             "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": false },
+      "repair":    { "label": "Repaired",            "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": true  },
+      "retire":    { "label": "Retired",             "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "discarded": { "label": "Discarded",           "roles": ["admin"],            "state_change": true,  "closes_issue": true  }
+    }
+  },
+  "agwatch": {
+    "label": "Agwatch",
+    "events": {
+      "assign":    { "label": "Assigned",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "available": { "label": "Available",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "faulty":    { "label": "Issue Reported",      "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": false },
+      "repair":    { "label": "Issue Resolved",      "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": true  },
+      "lost":      { "label": "Lost",                "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "retire":    { "label": "Retired",             "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "discarded": { "label": "Discarded",           "roles": ["admin"],            "state_change": true,  "closes_issue": true  }
+    }
+  },
+  "modems": {
+    "label": "Modem",
+    "events": {
+      "assign":    { "label": "Assigned",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "available": { "label": "Available",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "faulty":    { "label": "Faulty",              "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": false },
+      "repair":    { "label": "Repaired",            "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": true  },
+      "lost":      { "label": "Lost",                "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "retire":    { "label": "Retired",             "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "discarded": { "label": "Discarded",           "roles": ["admin"],            "state_change": true,  "closes_issue": true  }
+    }
+  },
+  "laptops": {
+    "label": "Laptop",
+    "events": {
+      "assign":    { "label": "Assigned",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "available": { "label": "Available",           "roles": ["admin"],            "state_change": true,  "closes_issue": false },
+      "faulty":    { "label": "Faulty",              "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": false },
+      "repair":    { "label": "Repaired",            "roles": ["admin", "engineer"],"state_change": true,  "closes_issue": true  },
+      "lost":      { "label": "Lost",                "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "retire":    { "label": "Retired",             "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "discarded": { "label": "Discarded",           "roles": ["admin"],            "state_change": true,  "closes_issue": true  }
+    }
+  },
+  "sims": {
+    "label": "SIM",
+    "events": {
+      "recharge":  { "label": "Recharged",           "roles": ["admin"],            "state_change": false, "closes_issue": true  },
+      "expired":   { "label": "Expired",             "roles": ["admin", "engineer"],"state_change": false, "closes_issue": false },
+      "retire":    { "label": "Retired",             "roles": ["admin"],            "state_change": true,  "closes_issue": true  },
+      "discarded": { "label": "Discarded",           "roles": ["admin"],            "state_change": true,  "closes_issue": true  }
+    }
+  }
+}

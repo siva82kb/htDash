@@ -7,7 +7,7 @@
     let currentUser = null;
     let currentPage = 'dashboard';
     let allPatients = [];
-    let currentFilter = 'active';
+    let currentFilter = 'all';
     let droppedOutPatients = new Set();      // Track patients who have dropped out
     let trialCompletedPatients = new Set(); // Track patients whose trial is fully complete
     let selectedPatientData = null;
@@ -17,51 +17,37 @@
     let allDeviceSets = [];   // Cached device sets for assignment filtering
     let allWatches = [];      // Cached watches for assignment filtering
 
-    // Initialize - with error handling
-    document.addEventListener('DOMContentLoaded', () => {
+    // Initialize — await auth before running page-specific init
+    document.addEventListener('DOMContentLoaded', async () => {
       try {
-        checkAuth();
+        await checkAuth();
       } catch(e) {
         console.error('Auth error:', e);
+        return;
       }
-      // Defer loading for faster initial render
-      setTimeout(() => {
-        try {
-          loadExercisesData();
-          loadDashboard();
-        } catch(e) {
-          console.error('Load error:', e);
-        }
-      }, 100);
+      if (typeof initPage === 'function') {
+        try { initPage(); } catch(e) { console.error('Page init error:', e); }
+      }
     });
 
-    // Silently restore Flask server session from stored credentials.
-    // Called on every page load — handles server restarts which wipe server-side sessions
-    // while the user's localStorage still has their login info.
-    async function restoreServerSession(loginId) {
-      try {
-        const stored = JSON.parse(localStorage.getItem('user') || '{}');
-        // We don't store passwords in localStorage (correctly), so we use /get_userId
-        // which also re-sets current_session.login_place from the LoginId.
-        // A lightweight ping using the existing endpoint is sufficient.
-        await fetch('/get_userId', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `search_term=Pluto&LoginId=${loginId}&PRIVILEGE=${stored.privilege || 'user'}`
-        });
-      } catch(e) {
-        // Non-fatal — if this fails, individual save routes will return 401 and user sees an error
-        console.warn('Session restore failed:', e);
+    async function checkAuth() {
+      if (USE_LOCAL_STORAGE) {
+        const stored = localStorage.getItem('user');
+        if (stored) {
+          currentUser = JSON.parse(stored);
+          updateUserInfo();
+          return;
+        }
       }
-    }
-
-    function checkAuth() {
-      const userStr = localStorage.getItem('user');
-      if (!userStr) { window.location.href = '/login'; return; }
-      currentUser = JSON.parse(userStr);
-      updateUserInfo();
-      // Restore Flask server-side session (lost on server restart)
-      restoreServerSession(currentUser.loginId);
+      try {
+        const response = await fetch('/api/me');
+        if (!response.ok) { window.location.href = '/login'; return; }
+        currentUser = await response.json();
+        if (USE_LOCAL_STORAGE) localStorage.setItem('user', JSON.stringify(currentUser));
+        updateUserInfo();
+      } catch(e) {
+        window.location.href = '/login';
+      }
     }
 
     function updateUserInfo() {
@@ -69,11 +55,13 @@
         document.getElementById('user-initials').textContent = currentUser.loginId.slice(0, 2).toUpperCase();
         document.getElementById('user-name').textContent = currentUser.loginId;
         document.getElementById('user-place').textContent = `${currentUser.place} • ${currentUser.privilege}`;
-        document.getElementById('location-name').textContent = currentUser.place;
-        document.getElementById('location-privilege').textContent = currentUser.privilege === 'admin' ? 'Full Administrative Access' : 'Site Access';
+        const locationName = document.getElementById('location-name');
+        if (locationName) locationName.textContent = currentUser.place;
+        const locationPrivilege = document.getElementById('location-privilege');
+        if (locationPrivilege) locationPrivilege.textContent = currentUser.privilege === 'admin' ? 'Full Administrative Access' : 'Site Access';
         if (currentUser.privilege === 'admin') {
-          document.getElementById('add-patient-btn').classList.remove('hidden');
-          document.getElementById('filter-unassigned').classList.remove('hidden');
+          document.getElementById('add-patient-btn')?.classList.remove('hidden');
+          document.getElementById('filter-unassigned')?.classList.remove('hidden');
         }
       }
     }
@@ -129,12 +117,12 @@
     }
 
     function logout() {
-      localStorage.removeItem('user');
-      // Also clear server-side Flask session so the next login starts clean
+      if (USE_LOCAL_STORAGE) localStorage.removeItem('user');
       fetch('/logout', { method: 'POST' }).finally(() => {
         window.location.href = '/login';
       });
     }
+
 
     // ============================================================
     // Activity Logging Utility
