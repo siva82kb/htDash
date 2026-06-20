@@ -26,7 +26,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from utils.data_access import read_patient_meta, write_patient_meta
-from utils.protocol_events import read_protocol_events, write_protocol_events
+from utils.protocol_events import read_protocol_events, write_protocol_events, populate_activation_dates
 
 FMT_DATE = '%Y-%m-%d'
 FMT      = '%Y-%m-%dT%H:%M'
@@ -115,6 +115,24 @@ def shift_entry(entry: dict, event_index: dict,
     entry_delta = parse_dt(new_sd[0]) - parse_dt(sd[0])
     entry['scheduled_date'] = new_sd
 
+    # For home_visit_d02/d03, session_start/session_end dates must match the new scheduled_date
+    # (they are locked to specific days: Day 2, Day 3, etc.)
+    if pid in ('home_visit_d02', 'home_visit_d03'):
+        # Extract time-of-day from old session_start, apply to new scheduled_date[0]
+        if entry.get('session_start'):
+            time_str = entry['session_start'].split('T')[1]
+            h, m = map(int, time_str.split(':')[:2])
+            new_start = parse_dt(new_sd[0])
+            new_start = new_start.replace(hour=h, minute=m, second=0)
+            entry['session_start'] = new_start.strftime(FMT)
+        if entry.get('session_end'):
+            time_str = entry['session_end'].split('T')[1]
+            h, m = map(int, time_str.split(':')[:2])
+            new_end = parse_dt(new_sd[0])
+            new_end = new_end.replace(hour=h, minute=m, second=0)
+            entry['session_end'] = new_end.strftime(FMT)
+        return  # Don't shift by entry_delta; dates are locked to scheduled_date
+
     # Shift all datetime fields by the per-entry delta
     for field in DATETIME_FIELDS:
         if entry.get(field):
@@ -175,9 +193,9 @@ def shift_activation(homer_id: str, days: int, hospital: str) -> None:
             epoch['end'] = shift_dt(epoch['end'], n_delta)
 
     write_patient_meta(hospital, homer_id, patient)
-    print(f"enrollDate:       {old_enroll}  →  {patient['enrollDate']}")
-    print(f"a0CompletionDate: {old_a0}  →  {patient['a0CompletionDate']}")
-    print(f"activationDate:   {old_activation}  →  {patient['activationDate']}")
+    print(f"enrollDate:       {old_enroll}  ->  {patient['enrollDate']}")
+    print(f"a0CompletionDate: {old_a0}  ->  {patient['a0CompletionDate']}")
+    print(f"activationDate:   {old_activation}  ->  {patient['activationDate']}")
 
     # ── Protocol events ───────────────────────────────────────────────────────
     events_data = read_protocol_events(hospital, homer_id)
@@ -203,6 +221,11 @@ def shift_activation(homer_id: str, days: int, hospital: str) -> None:
 
     write_protocol_events(hospital, homer_id, events_data)
     print(f"Shifted {count} protocol event entries.")
+
+    # Populate activation-dependent scheduled_dates
+    activate_dt = new_activation.strftime(FMT)
+    populate_activation_dates(hospital, homer_id, activate_dt)
+    print(f"Populated activation-dependent scheduled dates.")
     print(f"Done.")
 
 

@@ -63,6 +63,10 @@
           document.getElementById('add-patient-btn')?.classList.remove('hidden');
           document.getElementById('filter-unassigned')?.classList.remove('hidden');
         }
+        // Hide Devices nav link for therapists (only engineers and admins)
+        if (currentUser.privilege !== 'admin' && currentUser.privilege !== 'engineer') {
+          document.querySelector('a[href="/devices"]')?.classList.add('hidden');
+        }
       }
     }
 

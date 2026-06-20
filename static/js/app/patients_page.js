@@ -313,6 +313,13 @@ async function submitAssignGroup() {
     return;
   }
 
+  // Show confirmation dialog
+  const groupLabel = group === 'experimental' ? 'Experimental (with Robot Therapy)' : 'Control (Standard Therapy)';
+  const confirmed = window.confirm(
+    `Are you sure you want to assign ${_assignGroupHomerID} to the ${groupLabel} group?\n\nThis action CANNOT be undone. The patient will be permanently assigned to this group for the duration of the study.`
+  );
+  if (!confirmed) return;
+
   btn.disabled = true;
   btn.textContent = 'Assigning…';
   try {

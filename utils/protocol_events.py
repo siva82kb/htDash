@@ -171,15 +171,20 @@ def populate_activation_dates(hospital_folder: str, homer_id: str,
             _date_add(activation_date, end_day - 1),
         ]
 
-    # Seed first watch_record
-    watch_entry = {
-        'id':                str(uuid.uuid4()),
-        'protocol_event_id': 'watch_record',
-        'scheduled_date':    [activation_date, activation_date],
-        'flagged':           False,
-        'notes':             '',
-    }
-    data['incomplete'].append(watch_entry)
+    # Seed first watch_record only if one doesn't already exist
+    has_watch_record = any(
+        e.get('protocol_event_id') == 'watch_record'
+        for e in data.get('incomplete', [])
+    )
+    if not has_watch_record:
+        watch_entry = {
+            'id':                str(uuid.uuid4()),
+            'protocol_event_id': 'watch_record',
+            'scheduled_date':    [activation_date, activation_date],
+            'flagged':           False,
+            'notes':             '',
+        }
+        data['incomplete'].append(watch_entry)
 
     write_protocol_events(hospital_folder, homer_id, data)
 

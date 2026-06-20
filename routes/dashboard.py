@@ -299,9 +299,33 @@ def events():
             'device_return',
             'watch_data_upload',
         })
-        is_paused        = bool(patient.get('trainingPausedDate'))
-        is_discontinued  = bool(patient.get('discontinuationDate'))
-        is_post_training = (derive_status(patient) == 'post_training')
+        _TRAINING_COMPLETED_VISIBLE = frozenset({
+            'adverse_event', 'adverse_event_followup',
+            'adverse_event_followup_visit', 'adverse_event_clinical_visit',
+            'a1_assessment', 'a2_assessment',
+            'schedule_a1_call', 'schedule_a2_call',
+            'device_return',
+            'watch_data_upload',
+        })
+        # After device_return is completed: only AE chains and assessments remain visible.
+        # Training is fully over, only post-training follow-ups shown.
+        _POST_DEVICE_RETURN_VISIBLE = frozenset({
+            'adverse_event', 'adverse_event_followup',
+            'adverse_event_followup_visit', 'adverse_event_clinical_visit',
+            'a1_assessment', 'a2_assessment',
+            'schedule_a1_call', 'schedule_a2_call',
+        })
+        is_paused             = bool(patient.get('trainingPausedDate'))
+        is_discontinued       = bool(patient.get('discontinuationDate'))
+        is_post_training      = (derive_status(patient) == 'post_training')
+        is_training_completed = (derive_status(patient) == 'training_completed')
+        is_a1_completed       = (derive_status(patient) == 'a1_completed')
+        is_all_completed      = (derive_status(patient) == 'all_completed')
+        # Check if device_return has been completed
+        is_device_return_completed = bool(
+            is_training_completed and
+            any(e.get('protocol_event_id') == 'device_return' for e in events_data.get('complete', []))
+        )
 
         # Precompute A1/A2 window dates for this patient
         _pt_assessment_windows = {}
@@ -349,6 +373,17 @@ def events():
                     except Exception:
                         pass
 
+            # A2 assessment completed (all_completed): no overdue events shown.
+            if is_all_completed:
+                continue
+
+            # After device_return completed or A1 assessment completed: only AE chains and assessments remain visible.
+            if (is_device_return_completed or is_a1_completed) and pid not in _POST_DEVICE_RETURN_VISIBLE:
+                continue
+
+            if is_training_completed and not is_device_return_completed and pid not in _TRAINING_COMPLETED_VISIBLE:
+                continue
+
             if is_discontinued and pid not in _DISCONTINUED_VISIBLE:
                 continue
 
@@ -358,7 +393,17 @@ def events():
             on_hold = is_paused and pid not in _PAUSE_VISIBLE and start_date <= today
 
             dep_ids    = patient_defs.get(pid, {}).get('depends_on') or []
-            blocked_by = [event_names.get(d, d) for d in dep_ids if d in known_ids and d not in completed_ids]
+            blocked_by = []
+            for d in dep_ids:
+                if d not in known_ids:
+                    continue
+                # For assessments, check if appointment is scheduled or call is completed
+                if pid in ('a1_assessment', 'a2_assessment') and d in ('schedule_a1_call', 'schedule_a2_call'):
+                    if entry.get('appointment_date') or d in completed_ids:
+                        continue  # Dependency satisfied
+                elif d in completed_ids:
+                    continue  # Dependency satisfied for all other events
+                blocked_by.append(event_names.get(d, d))
 
             if pid in _AE_FOLLOWUP_LABELS:
                 ae_ids   = entry.get('adverse_event_ids') or []

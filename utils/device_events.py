@@ -48,7 +48,7 @@ def read_device_events(hospital_folder: str, device_type: str, device_id: str) -
 
 def write_device_events(hospital_folder: str, device_type: str, device_id: str, data: dict) -> None:
     if Config.USE_S3:
-        s3_write_json(f"{hospital_folder}/devices/events/{device_type}/{device_id}.json", data)
+        s3_write_json(f"{hospital_folder}/devices/{_type_folder(device_type)}/events/{device_id}.json", data)
         return
     path = _events_path(hospital_folder, device_type, device_id)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -99,9 +99,9 @@ def append_device_event(
 def read_all_device_events(hospital_folder: str, device_type: str) -> list:
     """Read and merge all event files for a device type. Returns a flat list sorted by date desc."""
     if Config.USE_S3:
-        from utils.s3_store import s3_list_keys
+        from utils.s3_store import s3_list_prefix
         prefix = f"{hospital_folder}/devices/{_type_folder(device_type)}/events/"
-        keys = s3_list_keys(prefix)
+        keys = s3_list_prefix(prefix)
         all_events = []
         for key in keys:
             data = s3_read_json(key) or {}
@@ -134,6 +134,26 @@ def update_device_event(hospital_folder: str, device_type: str, device_id: str, 
 
 def get_open_issues(hospital_folder: str, device_type: str) -> list:
     """Return list of {device_id, faulty_event} for devices with unresolved faulty events."""
+    if Config.USE_S3:
+        from utils.s3_store import s3_list_prefix
+        prefix = f"{hospital_folder}/devices/{_type_folder(device_type)}/events/"
+        keys = s3_list_prefix(prefix)
+        issues = []
+        for key in keys:
+            try:
+                data = s3_read_json(key) or {}
+                events = sorted(data.get('events', []), key=lambda e: e.get('date', ''))
+                faulty_event = None
+                for ev in events:
+                    if ev['event_type'] == 'faulty':
+                        faulty_event = ev
+                    elif ev['event_type'] in _CLOSE_EVENTS:
+                        faulty_event = None
+                if faulty_event:
+                    issues.append(faulty_event)
+            except Exception:
+                pass
+        return issues
     events_dir = Path(Config.DATA_ROOT) / hospital_folder / 'devices' / _type_folder(device_type) / 'events'
     issues = []
     if not events_dir.exists():
@@ -158,6 +178,26 @@ def get_open_issues(hospital_folder: str, device_type: str) -> list:
 
 def get_resolved_issues(hospital_folder: str, device_type: str) -> list:
     """Return list of {faulty_event, resolved_event} pairs where issue was closed."""
+    if Config.USE_S3:
+        from utils.s3_store import s3_list_prefix
+        prefix = f"{hospital_folder}/devices/{_type_folder(device_type)}/events/"
+        keys = s3_list_prefix(prefix)
+        resolved = []
+        for key in keys:
+            try:
+                data = s3_read_json(key) or {}
+                events = sorted(data.get('events', []), key=lambda e: e.get('date', ''))
+                pending_faulty = None
+                for ev in events:
+                    if ev['event_type'] == 'faulty':
+                        pending_faulty = ev
+                    elif ev['event_type'] in _CLOSE_EVENTS and pending_faulty:
+                        resolved.append({'faulty': pending_faulty, 'resolved': ev})
+                        pending_faulty = None
+            except Exception:
+                pass
+        resolved.sort(key=lambda p: p['resolved'].get('date', ''), reverse=True)
+        return resolved
     events_dir = Path(Config.DATA_ROOT) / hospital_folder / 'devices' / _type_folder(device_type) / 'events'
     resolved = []
     if not events_dir.exists():

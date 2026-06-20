@@ -15,7 +15,7 @@
       },
       "cancellable": false,
       "repeatable": false,
-      "depends_on": []
+      "depends_on": ["informed_consent"]
     },
     {
       "id": "activation",
@@ -30,6 +30,7 @@
       "cancellable": false,
       "repeatable": false,
       "depends_on": [
+        "informed_consent",
         "exp_device_install"
       ]
     },
@@ -167,7 +168,7 @@
       },
       "cancellable": false,
       "repeatable": false,
-      "depends_on": []
+      "depends_on": ["informed_consent"]
     },
     {
       "id": "vcg_prescription_d01",
@@ -272,6 +273,20 @@
     }
   ],
   "shared": [
+    {
+      "id": "informed_consent",
+      "name": "Informed Consent",
+      "type": "strict",
+      "reference": "assignment",
+      "is_master": false,
+      "window": {
+        "start_day": 1,
+        "end_day": 5
+      },
+      "cancellable": false,
+      "repeatable": false,
+      "depends_on": []
+    },
     {
       "id": "adl_prescription_d01",
       "name": "ADL Exercise Prescription",
@@ -400,7 +415,7 @@
       },
       "cancellable": false,
       "repeatable": false,
-      "depends_on": []
+      "depends_on": ["schedule_a1_call"]
     },
     {
       "id": "a2_assessment",
@@ -414,7 +429,7 @@
       },
       "cancellable": false,
       "repeatable": false,
-      "depends_on": []
+      "depends_on": ["schedule_a2_call"]
     },
     {
       "id": "watch_record",

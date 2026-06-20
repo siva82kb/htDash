@@ -3,7 +3,9 @@
 HOMER Therapy Dashboard (htDash) is a Flask-based clinical dashboard for managing the HOMER RCT therapy intervention.
 
 ---
+
 ## Important Instructions for Interaction.
+
 1. When asked a question, reply to the question. This is an attempt to brainstrom. Do not start coding without explicit permission.
 2. Never code without updating the .md files. Any feature that must be recorded in the .md file must be recorded first before coding.
 
@@ -12,6 +14,7 @@ HOMER Therapy Dashboard (htDash) is a Flask-based clinical dashboard for managin
 ## Project Overview
 
 **htDash** manages stroke patients across three hospital sites (Manipal, Ranipet, Ludhiana). Core features:
+
 - **Patient Management:** Enrollment, group assignment (experimental/control), status tracking
 - **Exercise Management:** VCG programs, ADL session recording, call logs
 - **Analytics:** Usage charts per hospital site
@@ -25,14 +28,14 @@ HOMER Therapy Dashboard (htDash) is a Flask-based clinical dashboard for managin
 
 ## Documentation
 
-| Document | Contents |
-|---|---|
-| `docs/data_schemas.md` | All data file schemas: patient JSON, protocol events, device files, logs |
-| `docs/pages.md` | URL structure, page specs, all actions and modals defined in one place |
-| `docs/devices.md` | Device state machine, assignment rules, clinic logic, SIM linkage, 28-day auto-reset |
-| `docs/device_data_schemas.md` | Detailed field-level schemas for all device inventory, assignment, SIM, and log files |
-| `docs/ae_ri_logic.md` | Full AE/RI logic: stub lifecycle, follow-up chain, pause mechanics, broken protocol detection, auto-shift |
-| `docs/backlog.md` | Planned features not yet designed/built (grows over time) |
+| Document                      | Contents                                                                                                  |
+| ----------------------------- | --------------------------------------------------------------------------------------------------------- |
+| `docs/data_schemas.md`        | All data file schemas: patient JSON, protocol events, device files, logs                                  |
+| `docs/pages.md`               | URL structure, page specs, all actions and modals defined in one place                                    |
+| `docs/devices.md`             | Device state machine, assignment rules, clinic logic, SIM linkage, 28-day auto-reset                      |
+| `docs/device_data_schemas.md` | Detailed field-level schemas for all device inventory, assignment, SIM, and log files                     |
+| `docs/ae_ri_logic.md`         | Full AE/RI logic: stub lifecycle, follow-up chain, pause mechanics, broken protocol detection, auto-shift |
+| `docs/backlog.md`             | Planned features not yet designed/built (grows over time)                                                 |
 
 ---
 
@@ -45,6 +48,7 @@ The original `main` branch is a single-page app (`dashboard.html`, 39KB). Being 
 **Reason:** Flask blueprints already define natural URL boundaries; browser back/forward and deep-linking are broken in the SPA; no shared state justifies the complexity.
 
 **Approach:**
+
 - All work on `urlrouted` branch
 - `main` remains functional throughout
 - Merge only when complete and tested
@@ -67,37 +71,14 @@ The original `main` branch is a single-page app (`dashboard.html`, 39KB). Being 
 12. ✅ Watch record modal — chain + triggered modes, lost watch handling
 13. ✅ Patient call modal
 14. ✅ Fix `create_protocol_events()` — add missing `free` keys: `watch_record`, `activation_attempt`, `d15_attempt` (both groups); `other_device_issue_call`, `other_device_issue_visit` (experimental only). `cancelled: []` already present.
-14b. ⬜ Post-Day 28 rules (see `docs/ae_ri_logic.md` Sections 12, 14, 15):
-    - Day 28 pause auto-termination: `_auto_terminate_pause_if_expired()` in `api_patient_events` — closes open pause epoch at Day 28 end, updates `cumulativePauseDays`, clears `trainingPausedDate`
-    - `post_training` derived status in `derive_status()`: `today > activationDate + 28` AND no `trainingCompletionDate`/`brokenProtocolDate`/`discontinuationDate`
-    - Dashboard stat bubble + patient list filter tab + status badge for `post_training`
-    - Add `training_completion_d29` to `_PAUSE_VISIBLE` in both `routes/user_management.py` and `routes/dashboard.py`
-    - Client-side `_trainingPermanentlyEnded(patient)` — includes Day 28 expiry check
-    - Amber informational banner when Day 28 passed and D29 not yet filed
+    14b. ⬜ Post-Day 28 rules (see `docs/ae_ri_logic.md` Sections 12, 14, 15): - Day 28 pause auto-termination: `_auto_terminate_pause_if_expired()` in `api_patient_events` — closes open pause epoch at Day 28 end, updates `cumulativePauseDays`, clears `trainingPausedDate` - `post_training` derived status in `derive_status()`: `today > activationDate + 28` AND no `trainingCompletionDate`/`brokenProtocolDate`/`discontinuationDate` - Dashboard stat bubble + patient list filter tab + status badge for `post_training` - Add `training_completion_d29` to `_PAUSE_VISIBLE` in both `routes/user_management.py` and `routes/dashboard.py` - Client-side `_trainingPermanentlyEnded(patient)` — includes Day 28 expiry check - Amber informational banner when Day 28 passed and D29 not yet filed
 15. ⬜ Update File Adverse Event modal — add scheduling toggles for follow-up visit / clinical visit
 16. ⬜ Update Adverse Event Follow-up Call modal — `patient_initiated`, `ae_discussions`, scheduling toggles
 17. ⬜ Adverse Event Follow-up Visit modal (new)
 18. ⬜ Adverse Event Clinical Visit modal (new)
 19. ✅ Assessment modals (a1, a2) + scheduling calls (schedule_a1_call, schedule_a2_call) — implemented; see CLAUDE.md Enhancements section for details
-19b. ⬜ `device_return` event — engineer modal for device collection at end of training (any path):
-    - Lazy seeding in `api_patient_events`: seed when `trainingCompletionDate` OR `brokenProtocolDate` OR `discontinuationDate` is set, no existing stub, no completed entry in `free.device_return`
-    - Modal: per-device cards built from patient's open assignments at load time
-      - AG Watch (both groups): status = Returned / Lost / Battery dead; if Lost or Battery dead → issue date (required)
-      - Pluto / Mars / Laptop / Modem (experimental only): condition = Working / Faulty; if Faulty → has_issue set
-      - SIM (experimental only): status = Returned / Lost; if Lost → issue date (required)
-    - On save: close all open assignments; lost watches get `lost_date` + `lost: true`; faulty devices get `has_issue: true` + `faulty` device event; append to `free.device_return`
-    - Seed a `watch_data_upload` stub for each returned **non-lost** watch (see step 19c)
-    - Remove inline device-assignment closure from `api_complete_discontinuation`; update banner text
-    - Add `device_return` to `_BROKEN_PROTOCOL_INTERACTIVE` and `_DISCONTINUED_VISIBLE`; also visible for `training_completed`, `post_training`, `a1_completed`, `all_completed`
-    - Add `device_return` to `EVENT_OPENERS` in `patient_detail.js`
-    - See full spec in `docs/pages.md` → Device Return
-19c. ⬜ `watch_data_upload` event — engineer modal to upload raw ActiGraph `.gt3x` per removed watch:
-    - Seed one stub per removed **non-lost** watch in `api_complete_watch_record` (each limb where `old_id` present, `old_id != new_id`, `old_lost` false), and in `device_return` (step 19b)
-    - Stamp `triggered: [{type: "watch_data_upload", id}]` on the triggering entry; stub carries `triggered_by`, `watch_id`, `limb`, `removed_date`, `data_start`/`data_end`, `scheduled_date = [removed_date, removed_date]`
-    - New upload endpoint (`.gt3x` only) → `actigraphs/<event_id>.gt3x`; complete-event route with skip-with-reason path; download endpoint `GET /api/patients/<homer_id>/watch-data/<event_id>` (admin/therapist/engineer)
-    - Add to `EVENT_OPENERS`, `_BROKEN_PROTOCOL_INTERACTIVE`, `_DISCONTINUED_VISIBLE`, `_PAUSE_VISIBLE` (both `user_management.py` and `dashboard.py`)
-    - Surface upload status + download on the Watch Records tab and Timeline row
-    - See full spec in `docs/pages.md` → AG Watch Data Upload
+    19b. ⬜ `device_return` event — engineer modal for device collection at end of training (any path): - Lazy seeding in `api_patient_events`: seed when `trainingCompletionDate` OR `brokenProtocolDate` OR `discontinuationDate` is set, no existing stub, no completed entry in `free.device_return` - Modal: per-device cards built from patient's open assignments at load time - AG Watch (both groups): status = Returned / Lost / Battery dead; if Lost or Battery dead → issue date (required) - Pluto / Mars / Laptop / Modem (experimental only): condition = Working / Faulty; if Faulty → has_issue set - SIM (experimental only): status = Returned / Lost; if Lost → issue date (required) - On save: close all open assignments; lost watches get `lost_date` + `lost: true`; faulty devices get `has_issue: true` + `faulty` device event; append to `free.device_return` - Seed a `watch_data_upload` stub for each returned **non-lost** watch (see step 19c) - Remove inline device-assignment closure from `api_complete_discontinuation`; update banner text - Add `device_return` to `_BROKEN_PROTOCOL_INTERACTIVE` and `_DISCONTINUED_VISIBLE`; also visible for `training_completed`, `post_training`, `a1_completed`, `all_completed` - Add `device_return` to `EVENT_OPENERS` in `patient_detail.js` - See full spec in `docs/pages.md` → Device Return
+    19c. ⬜ `watch_data_upload` event — engineer modal to upload raw ActiGraph `.gt3x` per removed watch: - Seed one stub per removed **non-lost** watch in `api_complete_watch_record` (each limb where `old_id` present, `old_id != new_id`, `old_lost` false), and in `device_return` (step 19b) - Stamp `triggered: [{type: "watch_data_upload", id}]` on the triggering entry; stub carries `triggered_by`, `watch_id`, `limb`, `removed_date`, `data_start`/`data_end`, `scheduled_date = [removed_date, removed_date]` - New upload endpoint (`.gt3x` only) → `actigraphs/<event_id>.gt3x`; complete-event route with skip-with-reason path; download endpoint `GET /api/patients/<homer_id>/watch-data/<event_id>` (admin/therapist/engineer) - Add to `EVENT_OPENERS`, `_BROKEN_PROTOCOL_INTERACTIVE`, `_DISCONTINUED_VISIBLE`, `_PAUSE_VISIBLE` (both `user_management.py` and `dashboard.py`) - Surface upload status + download on the Watch Records tab and Timeline row - See full spec in `docs/pages.md` → AG Watch Data Upload
 20. ⬜ Patient detail tab content — Call Logs, ✅ Adverse Events, Watch Records, Robot Issues (exp only)
 21. ✅ Devices page — inventory, assignments, SIM management (integrated)
 22. ✅ SIM management — integrated into Devices page (no separate page)
@@ -110,25 +91,25 @@ The original `main` branch is a single-page app (`dashboard.html`, 39KB). Being 
 
 ## Key Files Reference
 
-| File | Purpose |
-|---|---|
-| `main.py` | App entry point, blueprint registration |
-| `config.py` | Credentials, hospital map, AWS settings |
-| `models/user.py` | Session proxy for per-request user context |
-| `routes/auth.py` | Login, logout, on-login checks |
-| `routes/dashboard.py` | Dashboard stats and events API |
-| `routes/user_management.py` | Patient CRUD, group assignment, patient events API |
-| `routes/notes.py` | Patient free-text Notes tab: list / create / attachment download (role-keyed) |
-| `routes/devices.py` | Full device management: inventory, assignments, SIM cards, 28-day auto-reset, recharge |
-| `routes/sim_cards.py` | Legacy SIM blueprint (not used by the Devices page; SIMs managed via routes/devices.py) |
-| `utils/data_access.py` | Patient file I/O, hospital folder lookup, session logs |
-| `utils/protocol_events.py` | Protocol event file creation and date population |
-| `config/study_protocol.json` | Static protocol event definitions |
-| `templates/base.html` | Shared layout — sidebar, header, nav |
-| `templates/patient_detail.html` | Patient detail page |
-| `static/js/app/` | Per-page JS modules |
-| `scripts/reset_test_patient.py` | Reset all ranipet test patients to enrolled state |
-| `scripts/shift_activation.py` | Shift a patient's activation date (and all dependent dates) by N days |
+| File                            | Purpose                                                                                 |
+| ------------------------------- | --------------------------------------------------------------------------------------- |
+| `main.py`                       | App entry point, blueprint registration                                                 |
+| `config.py`                     | Credentials, hospital map, AWS settings                                                 |
+| `models/user.py`                | Session proxy for per-request user context                                              |
+| `routes/auth.py`                | Login, logout, on-login checks                                                          |
+| `routes/dashboard.py`           | Dashboard stats and events API                                                          |
+| `routes/user_management.py`     | Patient CRUD, group assignment, patient events API                                      |
+| `routes/notes.py`               | Patient free-text Notes tab: list / create / attachment download (role-keyed)           |
+| `routes/devices.py`             | Full device management: inventory, assignments, SIM cards, 28-day auto-reset, recharge  |
+| `routes/sim_cards.py`           | Legacy SIM blueprint (not used by the Devices page; SIMs managed via routes/devices.py) |
+| `utils/data_access.py`          | Patient file I/O, hospital folder lookup, session logs                                  |
+| `utils/protocol_events.py`      | Protocol event file creation and date population                                        |
+| `config/study_protocol.json`    | Static protocol event definitions                                                       |
+| `templates/base.html`           | Shared layout — sidebar, header, nav                                                    |
+| `templates/patient_detail.html` | Patient detail page                                                                     |
+| `static/js/app/`                | Per-page JS modules                                                                     |
+| `scripts/reset_test_patient.py` | Reset all ranipet test patients to enrolled state                                       |
+| `scripts/shift_activation.py`   | Shift a patient's activation date (and all dependent dates) by N days                   |
 
 ---
 
@@ -141,18 +122,20 @@ python scripts/reset_test_patient.py expt1_dd/mm expt2_dd/mm ctrl1_dd/mm ctrl2_d
 ```
 
 Example:
+
 ```
 python scripts/reset_test_patient.py 23/03 24/03 22/03 21/03
 ```
 
-| Patient | Group | Training side |
-|---|---|---|
-| HOCMCV002 | experimental | Right |
-| HOCMCV003 | experimental | Left |
-| HOCMCV004 | control | Right |
-| HOCMCV005 | control | Left |
+| Patient   | Group        | Training side |
+| --------- | ------------ | ------------- |
+| HOCMCV002 | experimental | Right         |
+| HOCMCV003 | experimental | Left          |
+| HOCMCV004 | control      | Right         |
+| HOCMCV005 | control      | Left          |
 
 Dates are `dd/mm` (current year, noon). The script:
+
 - Wipes all device assignments and device log entries for the site
 - Deletes and recreates each patient folder from scratch
 - Sets `enrollDate` and `a0CompletionDate` to the supplied date
@@ -165,6 +148,7 @@ python scripts/shift_activation.py HOCMCV002 -2
 ```
 
 The script shifts the patient's entire timeline by N days (positive or negative):
+
 - `enrollDate`, `a0CompletionDate`, `activationDate` in the patient JSON all shift by N
 - For every entry in `protocol_events.json` (both `incomplete` and `complete`):
   - `scheduled_date` is **recomputed** from the new reference date using `study_protocol.json` window definitions, preserving the original time-of-day
@@ -229,7 +213,7 @@ The script shifts the patient's entire timeline by N days (positive or negative)
   - **Server enforcement:** `utils/date_validation.py` loads the JSON and exports `resolve_bounds(patient, event_id=None, events_data=None) -> (min_dt, max_dt)` and `validate_event_date(patient, value, event_id=None, events_data=None) -> Optional[str]`. Every `complete-event/*` route in `routes/user_management.py` calls the validator (via `_bad_date(patient, value, event_id=..., events_data=...)`) before writing — one line per route. Routes that file events with per-event rules (`exp_device_install`, `activate`, `log-activation-attempt`) pass the relevant `event_id` and the already-loaded `events_data`. Identical error message string is used client-side and server-side.
   - **Client enforcement:** helper `_applyDateBounds(modalEl, errorId)` in `static/js/app/patient_detail.js`, **hooked into `showModal(id)`** — every modal automatically picks up the universal bounds when it opens; nothing per-opener to remember. The helper **sweeps every `<input type="date">` and `<input type="datetime-local">` in the modal** and applies the bounds via `min`/`max` attributes, then attaches the keyboard-validation guard. Bounds resolve purely from `patientData` already on the page — no extra API call. The error element the keyboard validator writes into is named by `data-date-error="<error-id>"` on the modal root (one attribute per modal, paired with the `id="<modal-id>"`). The helper is **additive**: it only sets `min`/`max` when the opener hasn't already set a (stricter) bound, so per-modal custom bounds (e.g. the AE modal's tighter bounds derived from the AE issue date) are preserved.
   - **Scheduling rule:** inputs that capture **future/scheduling** dates (`new_appointment_date`, `scheduled_followup_visit`, `scheduled_clinical_visit`, etc.) carry `data-date-rule="scheduling"` in the template. The framework now applies `default_scheduling_rule` to them (instead of skipping). Default scheduling rule: `not_before: today` — keeps the therapist from accidentally scheduling a date in the past. Per-event scheduling rules can be added later if needed.
-  - **A1 / A2 out-of-window soft-confirm + reason** *(Phase 3)*: the framework's hard bound for `a1_assessment` is `activationDate + 29d` (i.e., not before D29 is due). The **ideal window** for A1 is `[activationDate + 30d, activationDate + 37d]` and for A2 is `[activationDate + 180d, activationDate + 187d]` — these come from `study_protocol.json` and are surfaced via `window_start` / `window_end` on the stubs. When the therapist picks a date inside the hard bound but **outside the ideal window**, the A1/A2 modal reveals a required reason textarea (`out_of_window_reason`). On save, a double-confirm fires; both the reason and the explicit confirmation are required before submission. Server validates the same rule (reason required when outside ideal window) and persists `out_of_window_reason` on the completed entry. Cards surface the stored reason inline next to the existing "Delayed" badge.
+  - **A1 / A2 out-of-window soft-confirm + reason** _(Phase 3)_: the framework's hard bound for `a1_assessment` is `activationDate + 29d` (i.e., not before D29 is due). The **ideal window** for A1 is `[activationDate + 30d, activationDate + 37d]` and for A2 is `[activationDate + 180d, activationDate + 187d]` — these come from `study_protocol.json` and are surfaced via `window_start` / `window_end` on the stubs. When the therapist picks a date inside the hard bound but **outside the ideal window**, the A1/A2 modal reveals a required reason textarea (`out_of_window_reason`). On save, a double-confirm fires; both the reason and the explicit confirmation are required before submission. Server validates the same rule (reason required when outside ideal window) and persists `out_of_window_reason` on the completed entry. Cards surface the stored reason inline next to the existing "Delayed" badge.
   - **Phase 1 scope (shipped):** the universal default rule only. **Phase 2 (shipped):** the DSL + per-event overrides for `exp_device_install` and `activation`. **Phase 3 (shipped):** hard bounds on `followup_call_d07` (after D03, before Day 21), `followup_call_d21` (after D07, before Day 28), `training_completion_d29`, `a1_assessment`, `a2_assessment`; the `default_scheduling_rule`; and the A1/A2 out-of-ideal-window reason mechanism. Devices-page date inputs are not yet on this framework — they remain wired via `/devices/api/device-validation-dates`.
 - `scheduled_date` in `protocol_events.json` is always a **two-element list** `[start, end]` (both `"YYYY-MM-DDTHH:MM"`). Point-in-time events have `start == end`. `null` for free/unscheduled events. Categorisation uses `start` for upcoming, `end` for overdue and broken-protocol detection.
 - `window.start_day` / `window.end_day` in `study_protocol.json` use **1-based day numbers**: Day 1 = the reference date itself (a0 for `reference=assignment`, activation for `reference=activation`). Code converts to a 0-based offset with `start_day - 1`. All event IDs (`d1`, `d02`, `d15`, …) reflect this naming convention.
@@ -288,7 +272,7 @@ The script shifts the patient's entire timeline by N days (positive or negative)
   - **Out-of-window date confirmation:** if the therapist enters an assessment date outside `[window_start, window_end]`, a double-confirmation dialog fires before saving. Proceeding records it as a delayed or early assessment.
   - **"Delayed" badge:** completed assessments where `completion_date > window_end` show an amber "Delayed" badge on the event row (client-side, derived from `scheduled_date[1]`).
   - **A2 before A1 auto-miss:** when the A2 modal is opened and `a1_assessment` is still in `incomplete` (not missed, not complete), a double-confirmation fires: "A1 has not been completed. Filing A2 will mark A1 as missed. Continue?" On confirm, the OK-press time is captured client-side (`_a2A1MissOkAt`) but **nothing is filed yet**. A1 is auto-missed **only if** A2 is subsequently committed — whether A2 is **filed** (`saveA2Assessment` → `api_complete_a2_assessment`) or **marked missed** (`markAssessmentMissed('a2')` → `api_miss_assessment`). Abandoning the A2 action (cancel, validation failure, navigate away) files nothing. Both actions are atomic single requests that write A1 and A2 together.
-    - **Ordering guarantee (no fixed offset):** the client sends `a1_miss_gap_seconds = (action_time − ok_press_time)` measured on the **browser clock**. The server keeps A2 authoritative (`A2.filed_at = now()`) and back-dates A1 by the measured gap: `A1.filed_at = A2.filed_at − a1_miss_gap_seconds` (`A1.missed_at = A1.filed_at[:16]`). Because OK is pressed before the action, A1 always sorts before A2 in the timeline (newest-first by `filed_at`), without any `-1s` ducktape and immune to client/server clock skew (both sides of the subtraction use the server's A2 stamp; only the *gap* is client-measured). If `a1_miss_gap_seconds` is absent, the server treats the gap as 0.
+    - **Ordering guarantee (no fixed offset):** the client sends `a1_miss_gap_seconds = (action_time − ok_press_time)` measured on the **browser clock**. The server keeps A2 authoritative (`A2.filed_at = now()`) and back-dates A1 by the measured gap: `A1.filed_at = A2.filed_at − a1_miss_gap_seconds` (`A1.missed_at = A1.filed_at[:16]`). Because OK is pressed before the action, A1 always sorts before A2 in the timeline (newest-first by `filed_at`), without any `-1s` ducktape and immune to client/server clock skew (both sides of the subtraction use the server's A2 stamp; only the _gap_ is client-measured). If `a1_miss_gap_seconds` is absent, the server treats the gap as 0.
   - **Visibility in `_BROKEN_PROTOCOL_INTERACTIVE` and `_DISCONTINUED_VISIBLE`:** both scheduling call types are included so they remain actionable after broken protocol or discontinuation.
   - **Window expiry:** if the A1 or A2 assessment window expires without completion, the stub remains in `incomplete` and is completable as a delayed assessment. No broken protocol, no discontinuation trigger.
 - **Watch record chain:** seeded at activation with `scheduled_date = [activationDate, activationDate]` and `triggered_by = {type: "activation", id: <activation_entry_id>}`. On each completion, a new open chain entry is seeded with `scheduled_date = [completion_date + next_followup_days, completion_date + next_followup_days]`.
@@ -322,18 +306,18 @@ The script shifts the patient's entire timeline by N days (positive or negative)
 
 Tabs appear left-to-right in this order. Visibility is per group.
 
-| Tab | Experimental | Control |
-|---|---|---|
-| Overview | ✅ | ✅ |
-| Devices | ✅ | ⬜ hidden |
-| VCG | ⬜ hidden | ✅ |
-| ADL | ✅ | ✅ |
-| Call Logs | ✅ | ✅ |
-| Adverse Events | ✅ | ✅ |
-| Watch Records | ✅ | ✅ |
-| Device Issues | ✅ | ⬜ hidden |
-| Timeline | ✅ | ✅ |
-| Notes | ✅ | ✅ |
+| Tab            | Experimental | Control   |
+| -------------- | ------------ | --------- |
+| Overview       | ✅           | ✅        |
+| Devices        | ✅           | ⬜ hidden |
+| VCG            | ⬜ hidden    | ✅        |
+| ADL            | ✅           | ✅        |
+| Call Logs      | ✅           | ✅        |
+| Adverse Events | ✅           | ✅        |
+| Watch Records  | ✅           | ✅        |
+| Device Issues  | ✅           | ⬜ hidden |
+| Timeline       | ✅           | ✅        |
+| Notes          | ✅           | ✅        |
 
 Notes is the last tab. It is visible to all three roles (admin, therapist, engineer) — unlike Adverse Events / Device Issues which are role-restricted — but each role sees only its own notes bucket (admin sees all). See the Notes feature spec below.
 
@@ -359,7 +343,7 @@ Unified tab covering every therapist-conducted call for the patient. Container i
 - **Alias (`Call-001`)**: one shared per-patient sequence across all four call types, 3-digit zero-padded. Stored as `alias` on the entry. The counter is **independent** of the AE / RI / ODI sequences — a single patient may simultaneously have `AE03`, `RI01`, `ODI02`, **and** `Call-007`. Assigned server-side at completion time by the helper `_next_call_alias(events_data)`; missing aliases on legacy entries are backfilled lazily on first read of `api_patient_events` (collect all completed call entries across the four buckets, sort chronologically by `completion_date`/`filed_at`, then assign starting from the next available number above the highest existing `Call-###`). **Only completed calls get a number** — cancelled or missed stubs are never aliased.
 - **Endpoint**: `/api/patients/<homer_id>/call-logs` returns three buckets — `followup_calls`, `patient_calls`, and `ae_followup_calls`. The client merges them, sorts newest-first via `_cmpCompletedDesc`, and renders one card per entry.
 - **Card header** shows `<alias> · <type tag>` where the tag is one of: "Patient Call", "Follow-up Day 07", "Follow-up Day 21", or "AE Follow-up". For AE follow-up cards, a `Re: AE02, AE05` line appears in the body so the therapist can cross-reference the Adverse Events tab for per-AE detail.
-- **No duplication concern**: AE follow-up calls continue to appear nested inside their AE card's *Follow-up history* on the Adverse Events tab. The Call Logs tab is the cross-AE chronological view; the AE tab is the per-AE detail view. Same entry surfaces on both — by design.
+- **No duplication concern**: AE follow-up calls continue to appear nested inside their AE card's _Follow-up history_ on the Adverse Events tab. The Call Logs tab is the cross-AE chronological view; the AE tab is the per-AE detail view. Same entry surfaces on both — by design.
 
 ### Watch Records tab
 
@@ -398,9 +382,9 @@ Notes attached to an already-completed event, after the fact. Same shape and mec
 - **UI surfaces (multiple, single storage):**
   - **Timeline tab** — primary surface. Two-pane layout: left column lists rich event rows; right column lazy-loads the selected event's role-filtered notes with an **Add Note** button. Clicking a real event row selects it (hover highlight); synthetic rows (Enrolled, A0) are not selectable.
   - **Adverse Events tab — AE card** — each AE card body shows a "Notes (N)" section with an inline list of role-filtered notes and an **Add Note** button. The notes target the `adverse_event` entry that the card represents. Same endpoints, same storage, same modal as the Timeline path — just a second entry point. Note count appears as a small badge in the card header for at-a-glance discoverability.
-  - **Device Issues tab — RI / ODI card** — each card surfaces the same "Notes (N)" section + Add Note + header badge as the AE card. Notes target the **call entry** (`robot_issue_call.id` for RI cards, `other_device_issue_call.id` for ODI cards) — i.e., notes attached at the card are about *the issue as a whole*. Notes specific to a particular engineer visit go on the visit entry itself via the Timeline tab (each visit is its own Timeline row). Same one-storage / multi-surface pattern as the AE card.
-  - **Call Logs tab — call card** — each call card (patient call, D07/D21 follow-up, or AE follow-up) is now **collapsible** (header click toggles the body, chevron rotates) for symmetry with the other event-card tabs. The card body ends with a "Notes (N)" section + Add Note button targeting the call entry's own id (`patient_call.id`, `followup_call_d07/d21` entry id, or `adverse_event_followup.id`). By the scoping rule, those notes are about *that specific call interaction* — not about the AE the follow-up may reference. AE-as-a-whole notes still live on the `adverse_event` entry surfaced from the AE card.
-  - **Scoping convention** — notes on an event are about *what that event represents*. So notes on a `robot_issue_call` are about the issue as a whole; notes on a `robot_issue_visit` (added from Timeline) are about that specific engineer trip; notes on an `adverse_event_followup` are about that follow-up call. The card surface on each tab surfaces only the channel matching that tab's framing (AE filing on the AE tab; RI/ODI call on the Device Issues tab; each individual call on the Call Logs tab); per-step channels not surfaced from any card are reached from the Timeline.
+  - **Device Issues tab — RI / ODI card** — each card surfaces the same "Notes (N)" section + Add Note + header badge as the AE card. Notes target the **call entry** (`robot_issue_call.id` for RI cards, `other_device_issue_call.id` for ODI cards) — i.e., notes attached at the card are about _the issue as a whole_. Notes specific to a particular engineer visit go on the visit entry itself via the Timeline tab (each visit is its own Timeline row). Same one-storage / multi-surface pattern as the AE card.
+  - **Call Logs tab — call card** — each call card (patient call, D07/D21 follow-up, or AE follow-up) is now **collapsible** (header click toggles the body, chevron rotates) for symmetry with the other event-card tabs. The card body ends with a "Notes (N)" section + Add Note button targeting the call entry's own id (`patient_call.id`, `followup_call_d07/d21` entry id, or `adverse_event_followup.id`). By the scoping rule, those notes are about _that specific call interaction_ — not about the AE the follow-up may reference. AE-as-a-whole notes still live on the `adverse_event` entry surfaced from the AE card.
+  - **Scoping convention** — notes on an event are about _what that event represents_. So notes on a `robot_issue_call` are about the issue as a whole; notes on a `robot_issue_visit` (added from Timeline) are about that specific engineer trip; notes on an `adverse_event_followup` are about that follow-up call. The card surface on each tab surfaces only the channel matching that tab's framing (AE filing on the AE tab; RI/ODI call on the Device Issues tab; each individual call on the Call Logs tab); per-step channels not surfaced from any card are reached from the Timeline.
   - **Future surfaces**: the same pattern can be extended to Watch Records cards if needed — every card represents a completed event, so the existing `event_notes` channel applies cleanly.
 - **Leak prevention:** `event_notes` is **stripped** from the `GET /api/patients/<homer_id>/events` response; notes reach the client only via the dedicated role-filtered read endpoint.
 - **Attachment:** one optional PDF at `note_attachments/<note_id>.pdf` (shared folder; UUID filenames never collide). Downloadable by the note's author (any role) or admin — shown in the expanded Timeline row and inline on the AE card.
@@ -427,65 +411,66 @@ Every modal can optionally include a reusable attachment widget. The widget is a
 ```
 
 ### Rules
+
 - **One PDF file per event**, optional. The therapist is never forced to upload.
 - **Caption textarea always present** alongside the file input. If a file is selected, the caption is **required** — the therapist must describe what the attachment is. If no file is selected, the caption is ignored.
 - **Storage:** `data/<site>/patients/<homer_id>/attachments/<event_id>.pdf` — filename is the event UUID. Relative path stored in the event JSON as `"attachment": "attachments/<event_id>.pdf"`.
 - **`attachment_caption`** always stored on events with the widget (`null` if left blank).
-- **Download access:** admin and therapist roles only. Engineers cannot download attachments. *(Exception: note attachments — see the Notes-tab exception below.)*
-- **Download location:** the Timeline tab is the single place where **event** attachment download links appear. Each completed event in the timeline that has an `attachment` field shows a download link. No other tab or page exposes event attachment downloads. *(Exception: the Notes tab shows a download link per note attachment — see below.)*
+- **Download access:** admin and therapist roles only. Engineers cannot download attachments. _(Exception: note attachments — see the Notes-tab exception below.)_
+- **Download location:** the Timeline tab is the single place where **event** attachment download links appear. Each completed event in the timeline that has an `attachment` field shows a download link. No other tab or page exposes event attachment downloads. _(Exception: the Notes tab shows a download link per note attachment — see below.)_
 - **Download endpoint:** `GET /api/patients/<homer_id>/download-attachment/<event_id>` — server checks role, locates `attachments/<event_id>.pdf` in the patient folder, and serves it.
 - **Upload endpoint:** `POST /api/patients/<homer_id>/upload-attachment` — generic, shared by all event modals.
 - **Template macro location:** `templates/macros/attachment_section.html` (imported per template).
 - **JS utility:** shared `saveAttachment(eventId, file)` helper in `patient_detail.js`; called by each `save*()` function that has the widget.
-- **Note attachments exception (free notes + retrospective event notes):** both note types reuse the attachment **widget** (file input + caption, same caption-required-when-file rule) but **not** the rest of this module. Note PDFs are stored at `note_attachments/<note_id>.pdf` (not `attachments/`), uploaded as part of the note's own `POST` (not the generic upload endpoint or the `saveAttachment` helper), and downloadable by the note's **author of any role — including engineers — plus admin**. The "admin/therapist only" and "generic upload endpoint" rules do **not** apply. Free-note attachments are downloaded via `GET …/notes/<note_id>/attachment` and shown on the **Notes tab**; event-note attachments are downloaded via `GET …/event-notes/<note_id>/attachment` and shown in the expanded **Timeline** row (the "Timeline is the single download location" rule still holds for *event* attachments, and event-note attachments live there too). See the [Patient Notes Tab](#patient-notes-tab) spec.
+- **Note attachments exception (free notes + retrospective event notes):** both note types reuse the attachment **widget** (file input + caption, same caption-required-when-file rule) but **not** the rest of this module. Note PDFs are stored at `note_attachments/<note_id>.pdf` (not `attachments/`), uploaded as part of the note's own `POST` (not the generic upload endpoint or the `saveAttachment` helper), and downloadable by the note's **author of any role — including engineers — plus admin**. The "admin/therapist only" and "generic upload endpoint" rules do **not** apply. Free-note attachments are downloaded via `GET …/notes/<note_id>/attachment` and shown on the **Notes tab**; event-note attachments are downloaded via `GET …/event-notes/<note_id>/attachment` and shown in the expanded **Timeline** row (the "Timeline is the single download location" rule still holds for _event_ attachments, and event-note attachments live there too). See the [Patient Notes Tab](#patient-notes-tab) spec.
 
 ### Per-modal attachment configuration
 
 Fill in ✅ / ⬜. Caption is always included when attachment is ✅.
 
-| Modal / Event | Attachment |
-|---|---|
-| `exp_device_install` | ✅ |
-| `activation` | ✅ |
-| `adl_prescription_d01` | ⬜ |
-| `adl_prescription_d15` | ⬜ |
-| `vcg_prescription_d01` | ⬜ |
-| `vcg_prescription_d15` | ⬜ |
-| `prescription_printout_d01` | ⬜ |
-| `prescription_printout_d15` | ⬜ |
-| `home_visit_d02` | ✅ |
-| `home_visit_d03` | ✅ |
-| `home_visit_d15` | ✅ |
-| `followup_call_d07` | ✅ |
-| `followup_call_d21` | ✅ |
-| `training_completion_d29` | ✅ |
-| `agwatch_timing_d01` | ✅ |
-| `agwatch_timing_d02` | ✅ |
-| `agwatch_timing_d03` | ✅ |
-| `agwatch_timing_d15` | ✅ |
-| `watch_record` | ✅ |
-| `watch_data_upload` | ⬜ (`.gt3x` data file is the payload — not the PDF attachment widget; see Notes-style exception) |
-| `a1_assessment` | ⬜ |
-| `a2_assessment` | ⬜ |
-| `schedule_a1_call` | ⬜ |
-| `schedule_a2_call` | ⬜ |
-| `patient_call` | ✅ |
-| `adverse_event` | ✅ |
-| `adverse_event_followup` | ✅ |
-| `adverse_event_followup_visit` | ✅ |
-| `adverse_event_clinical_visit` | ✅ |
-| `robot_issue_call` | ✅ |
-| `robot_issue_visit` | ✅ |
-| `resolve_robot_issue_visit` | ✅ |
-| `discontinuation` | ✅ |
-| `device_return` | ✅ |
-| `note` (Notes tab) | ✅ |
+| Modal / Event                  | Attachment                                                                                       |
+| ------------------------------ | ------------------------------------------------------------------------------------------------ |
+| `exp_device_install`           | ✅                                                                                               |
+| `activation`                   | ✅                                                                                               |
+| `adl_prescription_d01`         | ⬜                                                                                               |
+| `adl_prescription_d15`         | ⬜                                                                                               |
+| `vcg_prescription_d01`         | ⬜                                                                                               |
+| `vcg_prescription_d15`         | ⬜                                                                                               |
+| `prescription_printout_d01`    | ⬜                                                                                               |
+| `prescription_printout_d15`    | ⬜                                                                                               |
+| `home_visit_d02`               | ✅                                                                                               |
+| `home_visit_d03`               | ✅                                                                                               |
+| `home_visit_d15`               | ✅                                                                                               |
+| `followup_call_d07`            | ✅                                                                                               |
+| `followup_call_d21`            | ✅                                                                                               |
+| `training_completion_d29`      | ✅                                                                                               |
+| `agwatch_timing_d01`           | ✅                                                                                               |
+| `agwatch_timing_d02`           | ✅                                                                                               |
+| `agwatch_timing_d03`           | ✅                                                                                               |
+| `agwatch_timing_d15`           | ✅                                                                                               |
+| `watch_record`                 | ✅                                                                                               |
+| `watch_data_upload`            | ⬜ (`.gt3x` data file is the payload — not the PDF attachment widget; see Notes-style exception) |
+| `a1_assessment`                | ⬜                                                                                               |
+| `a2_assessment`                | ⬜                                                                                               |
+| `schedule_a1_call`             | ⬜                                                                                               |
+| `schedule_a2_call`             | ⬜                                                                                               |
+| `patient_call`                 | ✅                                                                                               |
+| `adverse_event`                | ✅                                                                                               |
+| `adverse_event_followup`       | ✅                                                                                               |
+| `adverse_event_followup_visit` | ✅                                                                                               |
+| `adverse_event_clinical_visit` | ✅                                                                                               |
+| `robot_issue_call`             | ✅                                                                                               |
+| `robot_issue_visit`            | ✅                                                                                               |
+| `resolve_robot_issue_visit`    | ✅                                                                                               |
+| `discontinuation`              | ✅                                                                                               |
+| `device_return`                | ✅                                                                                               |
+| `note` (Notes tab)             | ✅                                                                                               |
 
 ---
 
 ## JS Coding Conventions
 
-- **One JS file per page** (`static/js/app/<page>.js`). All modals for a page live in that page's file — do not extract individual modals into separate files. If the file grows too large to manage, split *all* modals out together into a `static/js/app/<page>/` directory, not just one.
+- **One JS file per page** (`static/js/app/<page>.js`). All modals for a page live in that page's file — do not extract individual modals into separate files. If the file grows too large to manage, split _all_ modals out together into a `static/js/app/<page>/` directory, not just one.
 - **Each modal has a clearly-delimited section** opened by a comment banner (`// ── Modal name ───...`), containing: module-level state variables, an `open*Modal()` function, a `save*()` function, and any private helpers.
 - **Dynamic UI state** (showing/hiding/disabling fields based on user input) is implemented with `onchange` handlers set up inside the `open*Modal()` function, not at page load. Handlers are re-attached each time the modal opens so they always close over fresh modal state.
 - **Validation** is enforced in two places: client-side in `save*()` before the fetch (user-facing error message via `setError()`), and server-side in the route (returns `{error}` JSON). Both must apply the same rules.
@@ -497,6 +482,7 @@ Fill in ✅ / ⬜. Caption is always included when attachment is ✅.
 When adding or modifying any feature that touches event rows or protocol events, verify ALL of the following locations are updated consistently:
 
 ### Event row rendering (blocked and upcoming events)
+
 Both pages that show event rows must render blocked and upcoming events identically.
 
 **Blocked events:** lock icon next to event name, amber badge "Needs: \<event name\>" on the right, non-clickable `<div>`.
@@ -505,64 +491,73 @@ Both pages that show event rows must render blocked and upcoming events identica
 
 **On-hold events** (patient is paused AND event is not an AE/RI follow-up AND `scheduled_date[0]` ≤ today): rendered in the upcoming section even though their window has opened or passed. Gray/muted styling, slate "On hold" badge on the right, non-clickable `<div>`. Flagged by `on_hold: true` on the server response. Events whose window genuinely has not opened yet (`scheduled_date[0]` > today) are unaffected and show normally as "Available from". Both event APIs set the `on_hold` flag; both row renderers must handle it. On-hold events never appear in the overdue section while the patient is paused.
 
-| Location | Function | Notes |
-|---|---|---|
-| `static/js/app/patient_detail.js` | `patientEventRow()` | Calls `EVENT_OPENERS` to determine clickability |
-| `static/js/app/dashboard.js` | `eventRow()` | Non-clickable for blocked or upcoming; links otherwise |
+| Location                          | Function            | Notes                                                  |
+| --------------------------------- | ------------------- | ------------------------------------------------------ |
+| `static/js/app/patient_detail.js` | `patientEventRow()` | Calls `EVENT_OPENERS` to determine clickability        |
+| `static/js/app/dashboard.js`      | `eventRow()`        | Non-clickable for blocked or upcoming; links otherwise |
 
 ### blocked_by computation (server-side)
+
 Both event APIs must compute `blocked_by` using the same logic (depends_on entries that are applicable and not yet complete).
 
-| Location | Route | Notes |
-|---|---|---|
-| `routes/user_management.py` | `GET /api/patients/<homer_id>/events` | Per-patient events |
-| `routes/dashboard.py` | `GET /api/dashboard/events` | Cross-patient events |
+| Location                    | Route                                 | Notes                |
+| --------------------------- | ------------------------------------- | -------------------- |
+| `routes/user_management.py` | `GET /api/patients/<homer_id>/events` | Per-patient events   |
+| `routes/dashboard.py`       | `GET /api/dashboard/events`           | Cross-patient events |
 
 ### Protocol event openers (patient detail page)
+
 Every protocol event that has a modal must be listed in `EVENT_OPENERS` in `patient_detail.js`. When a new modal is implemented, add the entry. Currently registered: `exp_device_install`, `activation`, `discontinuation_reminder`, `adl_prescription_d01/d15`, `vcg_prescription_d01/d15`, `prescription_printout_d01/d15`, `home_visit_d02/d03/d15`, `followup_call_d07/d21`, `training_completion_d29`, `agwatch_timing_d01/d02/d03/d15`, `watch_record`, `watch_data_upload`, `adverse_event`, `robot_issue_call`, `robot_issue_visit`, `adverse_event_followup`, `adverse_event_followup_visit`, `adverse_event_clinical_visit`, `resolve_robot_issue_visit`, `a1_assessment`, `a2_assessment`, `schedule_a1_call`, `schedule_a2_call`.
 
 ### Discontinued-patient clickability gate (client-side mirror)
+
 The patient detail page has a client-side **mirror** of the server `_DISCONTINUED_VISIBLE` set in `static/js/app/patient_detail.js` (look for `_DISCONTINUED_VISIBLE` near `patientEventRow`). It gates row clickability as a safety net — if a row's `protocol_event_id` is shown by the server but missing from this client set, the row renders but cannot be opened (a silent dead-click bug). When adding a new event type to the server-side `_DISCONTINUED_VISIBLE` in `routes/user_management.py` (and the mirror in `routes/dashboard.py`), also add it to the client set. No equivalent mirror exists for `_BROKEN_PROTOCOL_INTERACTIVE`, `_POST_TRAINING_VISIBLE`, or `_PAUSE_VISIBLE` — those are server-only.
 
 ### Synthetic events
+
 Some events are not stored in `protocol_events.json` but injected at query time by both event APIs. These require matching `EVENT_OPENERS` entries in `patient_detail.js`.
 
-| Synthetic event ID | Condition | Purpose |
-|---|---|---|
+| Synthetic event ID         | Condition                                            | Purpose                            |
+| -------------------------- | ---------------------------------------------------- | ---------------------------------- |
 | `discontinuation_reminder` | `broken_protocol` status + no `free.discontinuation` | Prompt user to discontinue patient |
 
 When adding a new synthetic event, update BOTH event APIs and `EVENT_OPENERS`.
 
 ### New protocol events
+
 When adding events to `config/study_protocol.json`, check:
+
 1. `create_protocol_events()` in `utils/protocol_events.py` handles the event type correctly
 2. Test data (`protocol_events.json` files) are updated with the new events
 3. `EVENT_OPENERS` in `patient_detail.js` has an entry if the event has a modal
 
 ### Patient JSON schema
+
 When adding fields to `homer_id.json`, update in all three places:
+
 1. Patient creation dict in `routes/user_management.py` (`api_create_patient`)
 2. `docs/data_schemas.md` — `homer_id.json` schema table
 3. Test data file(s) in `data/<site>/patients/<homer_id>/<homer_id>.json`
 
 ### Pause history (`pauseHistory`)
+
 When modifying any pause-related logic, verify ALL of the following are kept in sync:
 
-| Location | What to check |
-|---|---|
-| `routes/user_management.py` — `api_complete_adverse_event` | Appends new open entry to `pauseHistory` when `trainingPausedDate` transitions from `null`; appends to `reasons` if already paused |
-| `routes/user_management.py` — `api_complete_robot_issue_visit` | Same as above |
-| `routes/user_management.py` — `api_complete_adverse_event_followup` | Closes the open entry (fills `end`, `days`) when pause clears |
-| `routes/user_management.py` — `api_complete_adverse_event_followup_visit` | Same as above |
-| `routes/user_management.py` — `api_complete_adverse_event_clinical_visit` | Same as above |
-| `routes/user_management.py` — `api_complete_resolve_robot_issue_visit` | Same as above |
-| `routes/user_management.py` — `api_create_patient` | Initialises `pauseHistory: []` |
-| `scripts/reset_test_patient.py` | Initialises `pauseHistory: []` |
-| `scripts/shift_activation.py` | Shifts `pauseHistory[*].start` and `pauseHistory[*].end` by N days; also shifts `cancelled[*].scheduled_date` and `cancelled_at` |
-| `templates/patient_detail.html` | Pause history table section present in Overview tab |
-| `static/js/app/patient_detail.js` — `renderPauseBanner` | Segmented progress bar driven by `pauseHistory` closed entries + current open epoch |
-| `static/js/app/patient_detail.js` — `renderPauseHistoryTable` | Renders pause history table from `p.pauseHistory` |
-| `static/js/app/patient_detail.js` — `_deriveTransitions` | Builds `Map<event_id, badge>` for timeline transition badges; must be updated if new state-changing events are added |
+| Location                                                                  | What to check                                                                                                                      |
+| ------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `routes/user_management.py` — `api_complete_adverse_event`                | Appends new open entry to `pauseHistory` when `trainingPausedDate` transitions from `null`; appends to `reasons` if already paused |
+| `routes/user_management.py` — `api_complete_robot_issue_visit`            | Same as above                                                                                                                      |
+| `routes/user_management.py` — `api_complete_adverse_event_followup`       | Closes the open entry (fills `end`, `days`) when pause clears                                                                      |
+| `routes/user_management.py` — `api_complete_adverse_event_followup_visit` | Same as above                                                                                                                      |
+| `routes/user_management.py` — `api_complete_adverse_event_clinical_visit` | Same as above                                                                                                                      |
+| `routes/user_management.py` — `api_complete_resolve_robot_issue_visit`    | Same as above                                                                                                                      |
+| `routes/user_management.py` — `api_create_patient`                        | Initialises `pauseHistory: []`                                                                                                     |
+| `scripts/reset_test_patient.py`                                           | Initialises `pauseHistory: []`                                                                                                     |
+| `scripts/shift_activation.py`                                             | Shifts `pauseHistory[*].start` and `pauseHistory[*].end` by N days; also shifts `cancelled[*].scheduled_date` and `cancelled_at`   |
+| `templates/patient_detail.html`                                           | Pause history table section present in Overview tab                                                                                |
+| `static/js/app/patient_detail.js` — `renderPauseBanner`                   | Segmented progress bar driven by `pauseHistory` closed entries + current open epoch                                                |
+| `static/js/app/patient_detail.js` — `renderPauseHistoryTable`             | Renders pause history table from `p.pauseHistory`                                                                                  |
+| `static/js/app/patient_detail.js` — `_deriveTransitions`                  | Builds `Map<event_id, badge>` for timeline transition badges; must be updated if new state-changing events are added               |
 
 ### Exercise Prescription Printout
 
@@ -571,6 +566,7 @@ When modifying any pause-related logic, verify ALL of the following are kept in 
 Therapists can generate multi-language exercise pamphlets after ADL and VCG prescriptions. Supports 6 languages across 3 sites (Ranipet: English/Tamil/Telugu, Manipal: English/Kannada/Hindi, Ludhiana: English/Punjabi/Hindi).
 
 **User Flow:**
+
 1. Complete ADL + VCG prescriptions
 2. Click `prescription_printout_d01` or `prescription_printout_d15` event
 3. Select language using pill buttons (தமிழ், తెలుగు, ಕನ್ನಡ, हिंदी, ਪੰਜਾਬੀ)
@@ -579,12 +575,14 @@ Therapists can generate multi-language exercise pamphlets after ADL and VCG pres
 6. **Save PDF** — Generates and uploads as attachment
 
 **Key Files:**
+
 - `routes/user_management.py` — API endpoints: `api_prescription_pamphlet()`, `api_complete_prescription_printout()`
 - `templates/prescription_pamphlet.html` — Exercise cards with translated labels
 - `templates/patient_detail.html` — Modal with language buttons, preview pane, Print/Save PDF actions
 - `static/js/app/patient_detail.js` — `openPrescriptionPrintoutModal()`, `selectPrescriptionLanguage()`, `printPrescriptionPamphlet()`, `savePrescriptionPrintout()`
 
 **Pamphlet Layout:**
+
 - Info bar: Patient ID and Prescribed Date
 - Exercise cards: Name, description, dosage, items, QR code
 - Page breaks: Each exercise on separate page (except first)
@@ -600,7 +598,8 @@ Therapists can generate multi-language exercise pamphlets after ADL and VCG pres
 
 ## Known Limitations
 
-**PDF Multi-Page Output:** 
+**PDF Multi-Page Output:**
+
 - **Print button** — Respects CSS `@page` and `page-break-before` rules; generates professional multi-page output with proper page breaks
 - **Save PDF button** — Uses html2canvas to capture DOM as image, then splits into A4 pages; results in continuous image layout rather than optimized page breaks
 - **Recommendation:** Use Print button for final multi-page PDFs; Save PDF for quick archival
@@ -610,6 +609,7 @@ Therapists can generate multi-language exercise pamphlets after ADL and VCG pres
 ## Known Gaps (Require Dedicated Design Before Implementation)
 
 **Editing entered events:**
+
 - Some entered events may need correction after the fact (e.g. `training_blocked` flag set incorrectly in a home visit modal).
 - Editing is a cross-cutting concern: almost every event type could need it, an audit trail (who changed what, when, why) is required, and many edits have cascading implications for downstream events.
 - Current policy: only a global admin can correct errors, via direct data fix. No UI support.
@@ -626,6 +626,7 @@ Therapists can generate multi-language exercise pamphlets after ADL and VCG pres
 All 75 exercises now have YouTube URLs. Previously only `adl_1` had a URL; all others were empty.
 
 **Implementation:**
+
 - Filled `youtube_url` field in `config/homer_exercises.json` with `https://youtu.be/Ccaz3yJhaVA?si=I0Y1kbCluhiZBuAH`
 - QR codes now generate for all 75 exercises in the pamphlet
 
@@ -636,6 +637,7 @@ All 75 exercises now have YouTube URLs. Previously only `adl_1` had a URL; all o
 Exercise screenshots display in each exercise card before the YouTube QR code. When `USE_S3=True`, images are fetched from S3 at `EXERCISE_SS/<subfolder>/<filename>`; when `USE_S3=False`, images are read from the local `EXERCISE_SS/` folder. Both `.png` and `.jpg` are supported — `.png` is tried first, falling back to `.jpg`.
 
 **Files Modified:**
+
 - `routes/user_management.py`:
   - Added `_EXERCISE_SS_PATH` constant pointing to `EXERCISE_SS/` folder
   - Added `_SCREENSHOT_MAP` dict: 75-entry mapping of exercise IDs → screenshot filenames
@@ -647,6 +649,7 @@ Exercise screenshots display in each exercise card before the YouTube QR code. W
   - Added screenshot display block before QR code in both ADL and VCG exercise cards
 
 **Screenshot Filename Mapping:**
+
 - ADL (8): `ADL_1.png` – `ADL_8.png`
 - VCG2 Unilateral (8): `VCG2_Unilateral_task_1.png` – `VCG2_Unilateral_task_8.png`
 - VCG2 Bilateral (10): `VCG2_Bilateral_task_1.png` – `VCG2_Bilateral_task_10.png`
@@ -662,7 +665,8 @@ Exercise screenshots display in each exercise card before the YouTube QR code. W
 All 75 exercises have complete translations for 5 languages (Tamil, Telugu, Kannada, Hindi, Punjabi). Each language block contains fully translated: `name`, `description`, `dosage`, `items`.
 
 **Files Modified:**
-- `config/homer_exercises.json`: 
+
+- `config/homer_exercises.json`:
   - Translated 105 dosage fields from English to native languages
   - All "reps" → "மறுநிகழ்வுகள்" (Tamil), "పూనుకోవటాలు" (Telugu), etc.
   - All "sets" → "தொகுப்புகள்" (Tamil), "సెట్లు" (Telugu), etc.
@@ -678,6 +682,7 @@ All 75 exercises have complete translations for 5 languages (Tamil, Telugu, Kann
 ## Pamphlet Card Layout (Updated)
 
 Exercise cards now display in this order:
+
 1. Exercise name (translated)
 2. Description (translated)
 3. Dosage (translated)
@@ -696,6 +701,7 @@ Exercise cards now display in this order:
 **Architecture:**
 
 **Frontend Flow** (`static/js/app/patient_detail.js` — `savePrescriptionPrintout()`):
+
 1. Retrieves the rendered HTML from the preview div
 2. Sends HTML to new server endpoint: `POST /api/patients/<homer_id>/generate-prescription-pdf`
 3. Server renders HTML → generates PDF → saves attachment → marks event complete
@@ -703,6 +709,7 @@ Exercise cards now display in this order:
 5. PDF appears immediately in Timeline tab with download link
 
 **Backend Flow** (`routes/user_management.py` — `api_generate_prescription_pdf()`):
+
 1. Receives HTML content + event metadata (event_id, protocol_event_id, language, caption)
 2. Saves HTML to temporary file
 3. Calls Node.js Puppeteer script via subprocess: `node scripts/render_pdf.js <html_file> <pdf_file>`
@@ -719,6 +726,7 @@ Exercise cards now display in this order:
 10. Returns success response
 
 **Puppeteer Script** (`scripts/render_pdf.js`):
+
 - Node.js utility that wraps Puppeteer headless browser
 - Takes HTML file path + output PDF path as CLI arguments
 - Launches Chromium in sandbox mode (`--no-sandbox` for Docker/containers)
@@ -728,6 +736,7 @@ Exercise cards now display in this order:
 - Returns exit code 0 on success, non-zero on failure
 
 **Why Server-Side?**
+
 - ✅ Professional multi-page PDF with correct CSS page breaks
 - ✅ Works reliably across all browsers/users (no DOM/font rendering issues)
 - ✅ Consistent output (Chromium engine, not browser canvas)
@@ -737,6 +746,7 @@ Exercise cards now display in this order:
 - ✅ Solves all multi-language rendering edge cases
 
 **Key Files:**
+
 - `package.json` — Defines Puppeteer dependency (npm install required)
 - `scripts/render_pdf.js` — Node.js CLI wrapper for Puppeteer
 - `routes/user_management.py` — Flask endpoint that orchestrates rendering
@@ -744,11 +754,13 @@ Exercise cards now display in this order:
 - `templates/patient_detail.html` — Removed jsPDF + html2canvas CDN links
 
 **Setup & Installation:**
+
 ```bash
 npm install puppeteer  # Install in project root
 ```
 
 **Testing Checklist:**
+
 1. ✅ `npm install` completed successfully (Puppeteer 21.11.0 installed, 107 packages)
 2. ✅ Puppeteer script at `scripts/render_pdf.js` accepts HTML file input and generates PDF
 3. ✅ Server endpoint `POST /api/patients/<homer_id>/generate-prescription-pdf` created and working
@@ -767,15 +779,16 @@ npm install puppeteer  # Install in project root
 
 **What was changed:**
 
-| Component | Change | Result |
-|-----------|--------|--------|
-| Backend | Added `api_generate_prescription_pdf()` endpoint in routes/user_management.py | Server-side PDF generation orchestration |
-| Node.js | Created `scripts/render_pdf.js` (Puppeteer wrapper) | Headless Chromium rendering with proper CSS page breaks |
-| Frontend | Simplified `savePrescriptionPrintout()` in patient_detail.js | Calls server endpoint, receives PDF directly |
-| Dependencies | Removed jsPDF + html2canvas CDN links | Added `package.json` with Puppeteer |
-| Templates | Updated `patient_detail.html` | Removed client-side PDF library imports |
+| Component    | Change                                                                        | Result                                                  |
+| ------------ | ----------------------------------------------------------------------------- | ------------------------------------------------------- |
+| Backend      | Added `api_generate_prescription_pdf()` endpoint in routes/user_management.py | Server-side PDF generation orchestration                |
+| Node.js      | Created `scripts/render_pdf.js` (Puppeteer wrapper)                           | Headless Chromium rendering with proper CSS page breaks |
+| Frontend     | Simplified `savePrescriptionPrintout()` in patient_detail.js                  | Calls server endpoint, receives PDF directly            |
+| Dependencies | Removed jsPDF + html2canvas CDN links                                         | Added `package.json` with Puppeteer                     |
+| Templates    | Updated `patient_detail.html`                                                 | Removed client-side PDF library imports                 |
 
 **User Experience:**
+
 - Therapist clicks "Save PDF" in prescription printout modal
 - Server renders HTML with Puppeteer (Chromium engine)
 - Respects CSS `page-break-before: always` (each exercise on separate page)
@@ -785,6 +798,7 @@ npm install puppeteer  # Install in project root
 - PDF appears in Timeline tab immediately
 
 **Benefits Over Previous Approach:**
+
 - ✅ Professional multi-page PDF output
 - ✅ Consistent rendering (Chromium, not browser canvas)
 - ✅ Perfect font support for all languages
@@ -795,6 +809,7 @@ npm install puppeteer  # Install in project root
 ### Enhancements Implemented ✅ (April 2026)
 
 #### 1. Combined AG Watch Timing Modal
+
 **Status:** ⬜ Pending implementation
 
 Replaces all 8 separate `adl_agwatch_timing_*` and `vcg_agwatch_timing_*` events with 4 combined `agwatch_timing_d01/02/03/15` events. One modal, one save, all exercises (VCG + ADL) shown together in a table.
@@ -807,38 +822,47 @@ Replaces all 8 separate `adl_agwatch_timing_*` and `vcg_agwatch_timing_*` events
 - ADL/VCG tabs still display timing per exercise row for all 4 days, fetched via the same `agwatch-timing` API
 
 **Files to modify:**
+
 - `config/study_protocol.json` — Replace 8 events with 4 combined events (group-specific depends_on for d03/d15)
 - `routes/user_management.py` — Update `_AGWATCH_TIMING_CONFIG`, modal open API, complete-event handler
 - `templates/patient_detail.html` — New wider combined modal
 - `static/js/app/patient_detail.js` — New modal function, updated EVENT_OPENERS, updated ADL/VCG tab rendering
 
 #### 2. Discontinued Patient Read-Only Mode
+
 **Status:** ✅ Complete
 
 Once a patient is discontinued (`discontinuationDate` set), the entire record becomes read-only. No events can be opened, no changes are allowed, and a banner informs the user.
+
 - Red banner displays: "Patient is discontinued — record is read-only. No further changes are allowed."
 - All event rows non-clickable (no modal opens on click)
 - All complete-event API routes return 403 if patient is discontinued
 
 **Files Modified:**
+
 - `templates/patient_detail.html` — Added discontinued-readonly-banner
 - `static/js/app/patient_detail.js` — Added `_patientDiscontinued` flag, banner display logic, clickability guard
 - `routes/user_management.py` — Added `discontinuationDate` guard to 15+ complete-event routes
 
 #### 3. Device Setup Modal Extension
+
 **Status:** ✅ Complete
 
 Extended device setup (`exp_device_install`) to include modem, laptop, and SIM card assignments alongside Pluto and Mars.
+
 - Modem (required) — device assignment
 - Laptop (required) — device assignment
 - SIM Card (required) — assigned to modem for connectivity
 - All devices create assignment records
 
 **Files Modified:**
+
 - `routes/user_management.py` — Extended `api_available_devices`, updated `api_complete_device_install` with SIM assignment logic
 - `templates/patient_detail.html` — Added modem, laptop, and SIM select fields
 - `static/js/app/patient_detail.js` — Updated `openDeviceSetupModal()` to fetch available SIMs, `submitDeviceSetup()` with SIM validation, field labels
- ## Issues pd-ds
+
+## Issues pd-ds
+
 ### Issues Fixed ✅
 
 1. **Patient Call Button Hidden on Discontinue** — When a patient is discontinued, the "Patient Call" button is now hidden and inaccessible
@@ -876,6 +900,7 @@ Extended device setup (`exp_device_install`) to include modem, laptop, and SIM c
    - Fixed error when hovering with proper null/undefined checks
 
 **Files Modified:**
+
 - `static/js/app/patient_detail.js` — Updated `_renderDeviceGraphs()` and `_loadDeviceDetail()` functions
 
 ### UI Update Fixes ✅ Complete
@@ -889,18 +914,21 @@ Extended device setup (`exp_device_install`) to include modem, laptop, and SIM c
 Engineer call + visit chain for laptop, modem, and SIM issues — analogous to the robot issue chain for Pluto/Mars.
 
 **Events (experimental patients only):**
+
 - `other_device_issue_call` — triggered from patient events (activation, home visits, patient call, followup calls). Records `issue_occur_date` (when the issue first started, distinct from call date) and per-device outcome (`visit_required` / `resolved_over_call`). Marks affected devices `has_issue = true` and logs a "faulty" device event carrying `issue_occur_date`. If any device needs a visit, auto-creates an `other_device_issue_visit` stub.
 - `other_device_issue_visit` — engineer physical visit. Per-device outcomes: `repaired` (clears `has_issue`) / `replaced` (swap + clear issue) / `neither`. Does NOT pause training.
 
 **Device inventory:** `has_issue: boolean` added to modem, laptop, and SIM inventory records. Clears on resolution.
 
 **Devices page:**
+
 - Modem and laptop rows show "Issue" badge when `has_issue = true`
 - Resolve Issue modal for modem/laptop displays `issue_occur_date` from the device's "faulty" event log
 
 **Trigger toggles** exist in: activation, home_visit_d02/d03/d15, patient_call, followup_call_d07/d21. Hidden for control patients.
 
 **Files Modified:**
+
 - `config/study_protocol.json` — added 2 events to `experimental[]`
 - `routes/user_management.py` — `api_complete_other_device_issue_call`, `api_complete_other_device_issue_visit`, + trigger injection in 7 routes
 - `routes/devices.py` — `has_issue` support for modem/laptop/SIM; `issue_occur_date` in resolve; `GET /devices/api/device-issue-date`
@@ -911,16 +939,19 @@ Engineer call + visit chain for laptop, modem, and SIM issues — analogous to t
 ### Device Issue Resolution & UI Improvements ✅ (April 2026 - Continued)
 
 #### 1. Fixed Device Issue Resolution Bug
+
 **Status:** ✅ Complete
 
 **Problem:** Device issues raised from patient page and resolved via Devices page were not moving from "Open Issues" to "Resolved Issues". Recent Activity also displayed "00:00" instead of actual timestamps.
 
 **Root Cause:** `append_device_event()` in `utils/device_events.py` stored date-only strings (from datepickers) as `YYYY-MM-DDT00:00:00` (midnight). When sorting events chronologically:
+
 - Faulty event: `2026-04-21T14:30:00` (actual time when reported)
 - Repair event: `2026-04-21T00:00:00` (hardcoded midnight)
 - Sort result: repair < faulty → pair never detected → stayed in Open Issues
 
 **Solution:** When `event_date` is a date-only string, combine with current time of day instead of midnight:
+
 ```python
 # Before (broken):
 ts = datetime.strptime(event_date, '%Y-%m-%d').strftime('%Y-%m-%dT00:00:00')
@@ -932,9 +963,11 @@ ts = d.replace(hour=now.hour, minute=now.minute, second=now.second).strftime('%Y
 ```
 
 **Files Modified:**
+
 - `utils/device_events.py` — `append_device_event()` lines 75–81: replaced midnight logic with current-time-on-date logic
 
 **Verification:**
+
 - Issues raised from patient page now move to Resolved Issues when resolved via Devices page
 - Recent Activity displays correct timestamps (e.g., "14:32") instead of "00:00"
 - Works for both robot issues (pluto/mars) and other device issues (modem/laptop/SIM)
@@ -942,28 +975,33 @@ ts = d.replace(hour=now.hour, minute=now.minute, second=now.second).strftime('%Y
 ---
 
 #### 2. Report Issue Button UI Update
+
 **Status:** ✅ Complete
 
 **Change:** Added "Report Issue" buttons to modem and laptop card headers (top-right corner), matching pluto/mars layout.
 
 **Details:**
+
 - Buttons appear in card header next to "Manage" dropdown
 - Only visible for users with manage permissions (admin/engineer)
 - Removed inline action buttons from table rows (cleaner interface)
 - Hidden for retired devices
 
 **Files Modified:**
+
 - `templates/devices.html` — Added `issue-modems-btn` and `issue-laptops-btn` elements to card headers
 - `static/js/app/devices.js` — Added button IDs to visibility toggle list (line 72)
 
 ---
 
 #### 3. Robot Issue `issue_occur_date` Tracking
+
 **Status:** ✅ Complete
 
 **Feature:** Added optional `issue_occur_date` field to robot issue call modal. Tracks when the robot issue first started (distinct from call date).
 
 **Details:**
+
 - `issue_occur_date` is date-only input (optional)
 - Passed through `api_complete_robot_issue_call` to robot_issue_call free event
 - Traced through robot_issue_visit → resolve_robot_issue_visit chain
@@ -971,6 +1009,7 @@ ts = d.replace(hour=now.hour, minute=now.minute, second=now.second).strftime('%Y
 - Displayed in Devices page resolve modal under "Issue First Occurred"
 
 **Files Modified:**
+
 - `templates/patient_detail.html` — Added date input field to `#robot-issue-call-modal` (line 1167)
 - `static/js/app/patient_detail.js` — Updated `openRobotIssueCallModal()` to clear field, `saveRobotIssueCall()` to read and pass value
 - `routes/user_management.py` — Updated `api_complete_robot_issue_call()` to read and store `issue_occur_date` (lines 1958–1962), passes to device events on visit completion (lines 2379–2398, 2424–2427)
@@ -978,11 +1017,13 @@ ts = d.replace(hour=now.hour, minute=now.minute, second=now.second).strftime('%Y
 ---
 
 #### 4. Other Device Issue `issue_occur_date` Required Field
+
 **Status:** ✅ Complete
 
 **Change:** Made `issue_occur_date` a required field in other device issue call modal. Removed automatic today-date population.
 
 **Details:**
+
 - Added `required` attribute to HTML input
 - Removed auto-fill logic that set value to today's date
 - Field must be manually filled by user before saving
@@ -990,16 +1031,19 @@ ts = d.replace(hour=now.hour, minute=now.minute, second=now.second).strftime('%Y
 - Backend validation (line 5027) blocks empty values
 
 **User Flow:**
+
 1. Open other device issue call modal
 2. "Issue First Occurred" field is empty (no auto-fill)
 3. User MUST select a date/time
 4. Browser and server validate before saving
 
 **Files Modified:**
+
 - `templates/patient_detail.html` — Added `required` attribute to `#odi-issue-occur-date` input (line 1397)
 - `static/js/app/patient_detail.js` — Changed auto-fill from `nowStr` to empty string `''` in `openOtherDeviceIssueModal()` (line 4923)
 
 **Verification:**
+
 - Field is empty on modal open
 - Cannot submit modal without selecting date
 - Date picker prevents future dates
@@ -1010,11 +1054,13 @@ ts = d.replace(hour=now.hour, minute=now.minute, second=now.second).strftime('%Y
 ### Device Data Structure Refactor ✅ (April 2026)
 
 #### 1. Per-Type Folder Layout
+
 **Status:** ✅ Complete
 
 **Change:** Device data reorganised from flat type-grouped subdirectories to per-type folders. Every file for a device type now lives inside its own subfolder.
 
 **Old layout:**
+
 ```
 devices/inventory/pluto.json
 devices/assignments/pluto.json
@@ -1025,6 +1071,7 @@ devices/attachments/pluto/<event_id>.ext
 ```
 
 **New layout:**
+
 ```
 devices/pluto/inventory.json
 devices/pluto/assignments.json
@@ -1037,6 +1084,7 @@ devices/pluto/attachments/<event_id>.ext
 Type → folder mapping: `pluto→pluto`, `mars→mars`, `agwatch→agwatch`, `modem/modems→modems`, `laptop/laptops→laptops`, `sims→sims`
 
 **Key implementation:**
+
 - `_TYPE_FOLDER` dict and `_type_folder()` helper added to `utils/data_access.py` as the single source of truth for all path construction
 - Replaces the old `_LOG_TYPE_FOLDER` dict (removed)
 - All 11 read/write functions in `utils/data_access.py` updated
@@ -1045,6 +1093,7 @@ Type → folder mapping: `pluto→pluto`, `mars→mars`, `agwatch→agwatch`, `m
 - S3 keys follow the same new pattern
 
 **Files Modified:**
+
 - `utils/data_access.py` — `_TYPE_FOLDER`, `_type_folder()`, all inventory/assignment/fault_report/log functions
 - `utils/device_events.py` — `_events_path()`, `read_all_device_events()`, `get_open_issues()`, `get_resolved_issues()`
 - `routes/devices.py` — attachment paths in `api_upload_event_attachment()`
@@ -1056,22 +1105,26 @@ Type → folder mapping: `pluto→pluto`, `mars→mars`, `agwatch→agwatch`, `m
 ---
 
 #### 2. SIM ID = Phone Number
+
 **Status:** ✅ Complete
 
 **Change:** SIM `id` field is now the phone number instead of a UUID. Prevents the same phone number from being added twice or linked to two different modems.
 
 **Details:**
+
 - `api_add_device` for `dtype='sim'` sets `id = phone` (was `uuid4()`)
 - Duplicate check: if phone number already exists in inventory, returns 409
 - `phoneNumber` field kept alongside `id` for display compatibility
 - `sim_id` on modem inventory now references the phone number string (not a UUID)
 
 **Files Modified:**
+
 - `routes/devices.py` — `api_add_device()` SIM branch: duplicate check + `id = phone`
 
 ---
 
 #### 3. SIM Availability Fix
+
 **Status:** ✅ Complete
 
 **Problem:** Assigned SIMs still appeared in the device setup dropdown for new patients. The filter `s.get('assigned_date')` checked a field that doesn't exist on SIM records.
@@ -1089,16 +1142,19 @@ available_sims = [s for s in all_sims if s['id'] not in used_sim_ids]
 ```
 
 **Files Modified:**
+
 - `routes/user_management.py` — `api_available_devices()` SIM filtering logic
 
 ---
 
 #### 4. Device Swap — Missing Assign Events for New Device
+
 **Status:** ✅ Complete
 
 **Problem:** When a device is swapped via the Devices page or during a robot issue visit, the new (replacement) device never got an `assign` event record. So it never appeared in Recent Activity, unlike modem/laptop replacements which did.
 
 **Root cause:** Three swap paths were missing `append_device_event('assign', ...)` for the new device:
+
 1. `api_swap_device` in `routes/devices.py` — Devices page "Report Issue + swap" flow
 2. `api_complete_robot_issue_visit` in `routes/user_management.py` — robot issue visit swapped outcome
 3. `api_complete_resolve_robot_issue_visit` in `routes/user_management.py` — resolve robot issue visit new device delivery + other-device swap
@@ -1108,11 +1164,13 @@ All three already called `write_device_log()` for the new device but not `append
 **Fix:** Added `append_device_event(..., event_type='assign')` for the new device immediately after `write_device_assignments()` in each of the three paths. Also added `append_device_event(..., event_type='faulty')` for the old device in `api_swap_device` (was also missing).
 
 **Files Modified:**
+
 - `routes/devices.py` — `api_swap_device()`: added faulty event for old device + assign event for new device
 - `routes/user_management.py` — `api_complete_robot_issue_visit()` swapped branch: assign event for new device
 - `routes/user_management.py` — `api_complete_resolve_robot_issue_visit()` main replacement loop + other-device swap: assign event for new device
 
 **Verification:**
+
 - After a pluto/mars swap from Devices page → Overview tab Recent Activity shows "Faulty" (old) and "Assigned" (new)
 - After robot issue visit with device swap → Recent Activity shows "Assigned" for replacement device
 - Matches existing behaviour for modem/laptop replacements
@@ -1124,16 +1182,19 @@ All three already called `write_device_log()` for the new device but not `append
 **Constraints Applied:**
 
 **A. Issue Occurred Date** (when issue was first noticed):
+
 - **Robot Issues:** Required field, Min = Patient's activation date (`activationDate`), Max = today
 - **Other Device Issues:** Optional, Min = Patient's activation date, Max = today
 - **Device Report Issue (Devices page):** Optional, Min = Patient's activation date, Max = today
 
 **B. Call/Visit Date** (when engineer was called or visited):
+
 - Minimum: Issue Occurred Date (from the issue that triggered this)
 - Maximum: Current date (today)
 - Applies to: robot_issue_visit, resolve_robot_issue_visit, other_device_issue_visit, device resolve modal
 
 **C. Resolution Date** (when issue was resolved):
+
 - Minimum: Issue Occurred Date
 - Maximum: Current date (today)
 - Applies to: Device resolve modal (Devices page only)
@@ -1141,6 +1202,7 @@ All three already called `write_device_log()` for the new device but not `append
 **Implementation Details:**
 
 **Devices Page (devices.js & routes/devices.py):**
+
 - When device is selected, fetch patient's `enrollDate` + most recent issue's `issue_occur_date` via API
 - Set `min`/`max` on issue-occurred-date input: `[enrollDate, today]`
 - Set `min`/`max` on resolve-date input: `[issue_occur_date, today]`
@@ -1148,6 +1210,7 @@ All three already called `write_device_log()` for the new device but not `append
 - Server-side validation in `/devices/api/toggle-issue` and `/devices/api/swap-device`
 
 **Patient Detail Page (patient_detail.js & routes/user_management.py):**
+
 - API endpoint: fetch patient's enrollDate + all relevant issue's issue_occur_date
 - Applied to 5 event modals:
   1. `robot_issue_call` — issue_occur_date: `[enrollDate, today]`; call_date: `[issue_occur_date, today]`
@@ -1159,23 +1222,26 @@ All three already called `write_device_log()` for the new device but not `append
 - Server-side validation in all complete-event routes
 
 **Files Modified:**
+
 - `static/js/app/devices.js` — Enhanced `onIssueDeviceChange()` + `saveIssueAction()`
 - `routes/devices.py` — New API endpoint + validation in toggle-issue & swap-device
 - `static/js/app/patient_detail.js` — New API call + modal setup + validation in 5 save functions
 - `routes/user_management.py` — New API endpoint + validation in 5 complete-event routes
 
 **Error Messages:**
+
 - "Issue occurred date must be between enrollment date (YYYY-MM-DD) and today"
 - "Resolution date must be between issue occurred date (YYYY-MM-DD) and today"
 - "Dates cannot be in the future"
 
 **Verification Checklist:**
+
 - ✅ Syntax: Python and JavaScript code compiles without errors
 - ✅ API Endpoint: `/devices/api/device-validation-dates` created and returns enroll_date + issue_occur_date
 - ✅ Backend Validation: Both `api_toggle_issue` and `api_swap_device` validate date ranges
 - ✅ Frontend Bounds: Date inputs show visual bounds (min/max attributes set from API response)
 - ✅ Frontend Validation: `saveIssueAction()` validates dates before submission with error messages
-- ✅ User Flow: 
+- ✅ User Flow:
   1. Select device → fetch bounds → set min/max on inputs
   2. Pick date outside range → browser prevents selection OR user enters via calendar
   3. Try to save with invalid date → JS validation shows error message
@@ -1195,6 +1261,7 @@ All three already called `write_device_log()` for the new device but not `append
 **Implementation:**
 
 **patient_detail.js:**
+
 - `_validateDateInput(input, errorId)` — Validates keyboard-entered dates against input.min and input.max
 - `_formatDateForDisplay(dateStr)` — Formats YYYY-MM-DD → "DD Mon YYYY" for error messages
 - `_validateSessionEndInput(startInput, endInput, errorId)` — Validates session start/end pairs (same date + end > start)
@@ -1202,12 +1269,14 @@ All three already called `write_device_log()` for the new device but not `append
 - Enhanced `_attachSessionEndGuard()` — Now validates both start and end inputs on every keystroke
 
 **devices.js:**
+
 - `_attachDateKeyboardValidation(inputId, errorId)` — Real-time validation for issue/SIM date modals
 - `_formatDateForKeyboardValidation(dateStr)` — Date formatter for error messages
 - Updated `openIssueModal()`, `openAddSimModal()`, `openRechargeSimModal()` — Attach validation on open
 - Updated `onIssueDeviceChange()` — Attach validation after bounds are set
 
 **Validation Rules:**
+
 1. Date cannot be before input.min (e.g., "Date cannot be before 01 Apr 2026.")
 2. Date cannot be after input.max (e.g., "Date cannot be after 30 Apr 2026.")
 3. Session start and end must be on the same calendar date
@@ -1216,22 +1285,26 @@ All three already called `write_device_log()` for the new device but not `append
 6. Errors clear when field is valid
 
 **Coverage:**
+
 - ✅ All 25+ date fields in patient_detail modals (A1/A2, device setup, activation, home visits, calls, adverse events, watch records, etc.)
 - ✅ All date fields in devices.js modals (issue report/resolve, SIM recharge/expiry)
 - ✅ Both datetime-local (with time) and date-only inputs
 - ✅ Session start/end pairs validation
 
 **Error Messages (Examples):**
+
 - "Date cannot be before 01 Apr 2026."
 - "Date cannot be after 30 Apr 2026."
 - "Session start and end must be on the same date."
 - "Session end must be after session start."
 
 **Files Modified:**
+
 - `static/js/app/patient_detail.js` — 5 new functions, 2 function enhancements
 - `static/js/app/devices.js` — 2 new functions, 3 function enhancements
 
 **Testing:**
+
 - ✅ JavaScript syntax validation passed (node -c)
 - ✅ Manual testing: typing invalid dates shows error immediately
 - ✅ Validation persists until user clears field or enters valid date
@@ -1248,6 +1321,7 @@ All three already called `write_device_log()` for the new device but not `append
 **How It Works:**
 
 Before allowing a form to be submitted, the save functions now:
+
 1. Check if any date validation error elements contain visible errors
 2. Block submission with error message: "Please fix the date validation errors before submitting."
 3. Only proceed if all date fields are valid
@@ -1255,32 +1329,38 @@ Before allowing a form to be submitted, the save functions now:
 **Implementation:**
 
 **patient_detail.js:**
+
 - New `_hasDateValidationErrors(errorElementIds)` function — Checks if any error elements have visible errors
 - Updated save functions: `submitDeviceSetup()`, `submitActivation()`, `saveHomeVisit()`
 
 **devices.js:**
+
 - New `_hasDateValidationErrors(errorElementId)` function — Checks for visible date errors
 - Updated save function: `saveIssueAction()`
 
 **User Experience:**
 
 Before:
+
 ```
 User types invalid date → Gets error message → Clicks Save → Form submits with invalid date
 ```
 
 After:
+
 ```
 User types invalid date → Gets error message → Clicks Save → Form BLOCKED → "Please fix the date validation errors"
 ```
 
 **Coverage:**
+
 - ✅ Device setup modal — checks device-setup-error
 - ✅ Activation modal — checks activation-error
 - ✅ Home visit modals (d02, d03, d15) — checks hv-error
 - ✅ Issue report/resolve (Devices page) — checks issue-modal-error
 
 **Additional Benefits:**
+
 - Prevents double-submission with invalid dates
 - Clear feedback that date validation must pass before submission
 - Server-side validation still in place as backup
@@ -1303,6 +1383,7 @@ User types invalid date → Gets error message → Clicks Save → Form BLOCKED 
 **File Modified:** `static/js/app/devices.js`
 
 **Changes:**
+
 - Added `_attachLink()` helper function to Open Issues section (was only in Resolved Issues)
 - Updated Open Issues HTML template to display:
   - Issue notes with red "Issue:" label
@@ -1311,21 +1392,25 @@ User types invalid date → Gets error message → Clicks Save → Form BLOCKED 
 - Now mirrors the Resolved Issues layout for consistency
 
 **Where Downloads Appear:**
+
 - **Open Issues Section**: Shows "Report doc" link if attachment uploaded during "Report Issue"
 - **Resolved Issues Section**: Shows both "Fault doc" and "Resolution doc" links
 
 **User Flow:**
+
 1. User opens Report Issue modal → Uploads document → Clicks "Report Issue"
 2. Backend stores attachment in `devices/<type>/attachments/<event_id>.ext`
 3. Open Issues section immediately shows "Report doc" download link
 4. When issue resolved, Resolved Issues section shows both "Fault doc" and "Resolution doc"
 
 **Attachment Storage:**
+
 - Location: `data/<hospital>/devices/<type>/attachments/<event_id>.ext`
 - Supported types: PDF, PNG, JPG, JPEG, GIF, WebP
 - Endpoint: `GET /devices/api/download-event-attachment?type=...&device_id=...&event_id=...`
 
 **Testing:**
+
 - ✅ JavaScript syntax valid (node -c)
 - ✅ Download links appear in Open Issues
 - ✅ Download links appear in Resolved Issues
@@ -1343,25 +1428,295 @@ User types invalid date → Gets error message → Clicks Save → Form BLOCKED 
 
 **Card design:**
 
-| Element | Details |
-|---|---|
-| Alias | `AE01`, `AE02`, … assigned **server-side** at Phase 2 filing (`api_complete_adverse_event`), stored as `alias` on the `free.adverse_event` entry. Chronological (oldest = AE01). Stable — never recomputed or reassigned. |
-| Display order | Newest first |
-| Header | Alias + status badge + chevron (click anywhere to expand/collapse) |
-| Status badge | Red "Ongoing — Training blocked" / Amber "Ongoing" / Green "Resolved" |
-| Meta row | `Reported: <date> \| Resolved: <date> \| Duration: N days \| Day X` (always visible) |
-| Card color | Red border (blocked+ongoing), Amber border (ongoing), Green border (resolved) |
+| Element       | Details                                                                                                                                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Alias         | `AE01`, `AE02`, … assigned **server-side** at Phase 2 filing (`api_complete_adverse_event`), stored as `alias` on the `free.adverse_event` entry. Chronological (oldest = AE01). Stable — never recomputed or reassigned. |
+| Display order | Newest first                                                                                                                                                                                                              |
+| Header        | Alias + status badge + chevron (click anywhere to expand/collapse)                                                                                                                                                        |
+| Status badge  | Red "Ongoing — Training blocked" / Amber "Ongoing" / Green "Resolved"                                                                                                                                                     |
+| Meta row      | `Reported: <date> \| Resolved: <date> \| Duration: N days \| Day X` (always visible)                                                                                                                                      |
+| Card color    | Red border (blocked+ongoing), Amber border (ongoing), Green border (resolved)                                                                                                                                             |
 
 **Expanded body:**
+
 - Description, action taken, triggered-by, attachment link
 - **Follow-up history** section: all `adverse_event_followup`, `_visit`, `_clinical_visit` entries that reference this AE's ID, in chronological order. Each row shows type, date, event notes, per-AE discussion notes, resolved/unresolved status, `can_resume_from` if set, attachment link.
 
 **Duration field:**
+
 - Resolved: `resolve_date − report_date` in days
 - Ongoing: elapsed days since report date ("N days ongoing")
 
 **Files Modified:**
+
 - `static/js/app/patient_detail.js` — replaced `renderAdverseEventsTab()` and `_adverseEventCard()`; added `_toggleAeCard()`, `_AEF_TYPE_LABELS`, `_AE_FOLLOWUP_TYPES` constants
 - `docs/pages.md` — updated Adverse Events tab spec
+
+---
+
+## Features Implemented ✅ (June 2026)
+
+1. ✅ Device Activity Graphs with S3 integration — processinInstance.py script for data sync + local storage
+2. ✅ Exercise Timing Display — Timings now show in prescription cards (D01: 10:30 → 10:35)
+3. ✅ Place Name Normalization — Hospital location names standardized to lowercase
+4. ✅ Data Folder Structure — Unified path construction (META-DATA/ranipet/patients/ID/Pluto/)
+5. ✅ Node.js & Puppeteer Installation — Server-side PDF generation with multi-language support
+
+### Assessment Appointment Dependency Lock ✅ (June 10, 2026)
+
+**Feature:** A1/A2 assessments locked until appointment date is scheduled via either D29 modal or schedule call stub.
+
+**Details:**
+- Added `schedule_a1_call` and `schedule_a2_call` to `depends_on` for a1/a2_assessment in protocol
+- Assessment unlocks when: `appointment_date` is set OR scheduling call is completed
+- When appointment cancelled → lock reactivates automatically
+- Therapist must complete schedule call again to unlock assessment
+- Applied to both `api_patient_events` and `api_dashboard/events` endpoints
+- Lock shows as "Needs: Schedule A1/A2 Assessment" badge
+
+**Files Modified:**
+- `config/study_protocol.json` — Added dependencies for a1/a2_assessment
+- `routes/user_management.py` — Updated `_get_blocked_by` logic with special assessment handling
+- `routes/dashboard.py` — Applied same dependency logic
+
+### Informed Consent Event ✅ (June 10, 2026)
+
+**Feature:** Mandatory informed consent event before device setup and patient activation (both groups).
+
+**Details:**
+- New protocol event: `informed_consent` in shared events (Days 1-5, reference=assignment)
+- Requires: consent date (required), PDF form (required), caption (required), optional notes
+- Device setup depends on informed_consent
+- Activation depends on: informed_consent + exp_device_install (experimental), or informed_consent (control)
+- Date rules already configured in `date_rules.json`
+- No changes needed to `protocol_events.py` - auto-creates stubs for all patients
+- Endpoint: `POST /api/patients/<homer_id>/complete-event/informed-consent`
+- PDF saved as `informed_consent.pdf` with caption
+
+**Files Modified:**
+- `config/study_protocol.json` — Added informed_consent event with dependencies
+- `templates/patient_detail.html` — Added modal with labeled sections
+- `static/js/app/patient_detail.js` — Modal functions already existed
+- `routes/user_management.py` — Added `api_complete_informed_consent` endpoint
+- `config/date_rules.json` — Date bounds already configured
+
+### A1/A2 Assessment Modal Simplification ✅ (June 10, 2026)
+
+**Feature:** Removed scheduling modal from A1/A2 assessment - therapists must use schedule call stub instead.
+
+**Details:**
+- Removed "Schedule Appointment" section from both A1 and A2 modals
+- Assessment locked when `appointment_date` is null (shows "Assessment is locked" message)
+- Can only record assessment when appointment exists (via schedule_a1_call/a2_call stub)
+- Reschedule, cancel, and record sections only shown when appointment exists
+- All schedule-related modal buttons removed
+- Simplifies workflow: appointment scheduling is only via the dedicated schedule call event
+
+**Files Modified:**
+- `templates/patient_detail.html` — Removed schedule sections, added locked message
+- `static/js/app/patient_detail.js` — Simplified `_openAssessmentModal()` logic
+
+### Training Events Hidden After D29 Completion ✅ (June 10, 2026)
+
+**Feature:** After D29 completion (`training_completed` status), all training protocol events are hidden.
+
+**Details:**
+- New filter: `_TRAINING_COMPLETED_VISIBLE` (AE chains, assessments, device_return, watch_data_upload only)
+- Previous filter `_POST_TRAINING_VISIBLE` still used for post_training (D28+, D29 not filed) - includes D29
+- Hidden events after D29: home visits, followup calls, agwatch timings, prescriptions, etc.
+- Applied to both `api_patient_events` and `api_dashboard/events` endpoints
+- Distinction: post_training shows D29 (not yet filed), training_completed hides it (already filed)
+
+**Files Modified:**
+- `routes/user_management.py` — Added `_TRAINING_COMPLETED_VISIBLE` filter and status check
+- `routes/dashboard.py` — Applied same filter logic
+
+### Assessment Reschedule Appointment Endpoint ✅ (June 10, 2026)
+
+**Feature:** New API endpoint for rescheduling already-scheduled A1/A2 assessments.
+
+**Details:**
+- Endpoint: `POST /api/patients/<homer_id>/reschedule-assessment-appointment`
+- Validates new date is within protocol window
+- Logs rescheduling action with reason and old/new dates
+- Appends to `appointment_reschedules` array on the stub
+- Returns 400 if no scheduled appointment exists to reschedule
+
+**Files Modified:**
+- `routes/user_management.py` — Added `api_reschedule_assessment_appointment` endpoint
+
+### Overdue Events Visibility After Device Return & Assessments ✅ (June 10, 2026)
+
+**Feature:** Progressive hiding of overdue events as training progresses through device return and assessments.
+
+**Details:**
+
+After device_return is filed OR A1 assessment is completed:
+- Only AE chains and A2 assessment remain visible
+- All training events (home visits, prescriptions, etc.) are hidden
+- Filter: `_POST_DEVICE_RETURN_VISIBLE` applies
+
+After A2 assessment is completed (all_completed status):
+- NO overdue events displayed
+- Training is fully complete, no further action required
+- Filter: early exit skips all events
+
+**Event Visibility Rules by Status:**
+
+| Status | Visible Overdue Events | Filter Applied |
+|--------|---|---|
+| `active` / `paused` | All events (filtered by pause if paused) | `_PAUSE_VISIBLE` |
+| `post_training` | D29 + AE + A1/A2 + device_return + watch_data_upload | `_POST_TRAINING_VISIBLE` |
+| `training_completed` (without device_return) | AE + A1/A2 + device_return + watch_data_upload | `_TRAINING_COMPLETED_VISIBLE` |
+| `training_completed` (with device_return) | AE + A2 only | `_POST_DEVICE_RETURN_VISIBLE` |
+| `a1_completed` | AE + A2 only | `_POST_DEVICE_RETURN_VISIBLE` |
+| **`all_completed`** | **❌ NO EVENTS** | **early exit (no filter)** |
+| `broken_protocol` | AE/RI/ODI chains + A1/A2 | `_BROKEN_PROTOCOL_INTERACTIVE` |
+| `discontinued` | AE chains + A1/A2 | `_DISCONTINUED_VISIBLE` |
+
+**Implementation:**
+
+- Added `_POST_DEVICE_RETURN_VISIBLE` frozenset containing only AE chains and A1/A2 assessments
+- Added `is_device_return_completed` detection: checks if `device_return` exists in `complete[]` when `training_completed`
+- Added `is_a1_completed` status check
+- Added `is_all_completed` status check with early exit (skips all overdue events)
+- Filter priority: `all_completed` → `device_return_completed` or `a1_completed` → `training_completed` → `post_training` → others
+
+**Files Modified:**
+- `routes/user_management.py` — Added status flags, `_POST_DEVICE_RETURN_VISIBLE` filter, and filter checks in event loop
+- `routes/dashboard.py` — Applied same filters to dashboard events API for consistency
+
+**Testing Verified:**
+- ✅ After device_return: only AE + A2 shown
+- ✅ After A1 completion: only AE + A2 shown
+- ✅ After A2 completion: NO overdue events shown
+- ✅ All other status filters remain unchanged
+
+### Informed Consent Event ✅ (June 10, 2026)
+
+**Feature:** Mandatory informed consent event before device setup and patient activation (both groups).
+
+**Details:**
+- New protocol event: `informed_consent` in shared events (Days 1-5, reference=assignment)
+- Requires: consent date (required), PDF form (required), optional notes
+- Device setup depends on informed_consent
+- Activation depends on: informed_consent + exp_device_install (experimental), or informed_consent (control)
+- Date rules already configured in `date_rules.json`
+- No changes needed to `protocol_events.py` - auto-creates stubs for all patients
+
+**Modal Design:**
+- Consent Date: `datetime-local` input, required, date validation enforced
+- Consent Form PDF: file input (`.pdf` only), required, validates before upload
+- Additional Notes: optional textarea field
+- Error Messages: displayed prominently at bottom of modal before buttons
+- Validations: date required, PDF required, PDF must be valid file type
+
+**Attachment Handling:**
+- PDF stored as `attachments/informed_consent.pdf` in patient folder
+- Caption NOT required (unlike other events)
+- Uses `_uploadAttachmentNoCaption()` helper for PDF-only uploads
+- Backend checks: `if protocol_event_id != 'informed_consent' and not caption: return error`
+
+**Files Modified:**
+- `config/study_protocol.json` — Added informed_consent event with dependencies
+- `templates/patient_detail.html` — Added modal with date, PDF, and notes fields; error message at bottom
+- `static/js/app/patient_detail.js` — Modal functions `openInformedConsentModal()`, `saveInformedConsent()`, `_uploadAttachmentNoCaption()`
+- `routes/user_management.py` — Added `api_complete_informed_consent` endpoint, made caption optional for informed_consent in `api_upload_attachment()`
+- `config/date_rules.json` — Date bounds already configured
+
+**Validation Flow:**
+1. User opens modal
+2. Selects consent date (required, bounded by rules)
+3. Uploads PDF (required, `.pdf` only)
+4. Adds optional notes
+5. Clicks Save:
+   - Validates date is filled
+   - Validates date passes bounds check
+   - Validates PDF is selected
+   - Validates PDF is `.pdf` file
+   - If all valid: saves event and uploads PDF
+   - If invalid: shows error message prominently
+6. Modal closes on success
+
+**Testing Verified:**
+- ✅ Date validation enforced (required, bounds check)
+- ✅ PDF validation enforced (required, must be `.pdf`)
+- ✅ Error messages display clearly at bottom of modal
+- ✅ PDF uploads without caption requirement
+- ✅ Event marked complete in protocol_events.json
+- ✅ Device setup and activation now depend on informed_consent
+
+### Server Timezone Configuration ✅ (June 12, 2026)
+
+**Problem:** Server was using local system time without timezone awareness. This causes issues when:
+- Server runs in different timezone than hospitals (India)
+- System timezone is not explicitly set
+- Timestamps are ambiguous (no UTC offset information)
+
+**Solution:** Implemented timezone-aware datetime handling with India Standard Time (IST).
+
+**Details:**
+- All three hospitals (Manipal, Ranipet, Ludhiana) are in India
+- Server timezone configured to Asia/Kolkata (IST: UTC+5:30)
+- Configuration stored in `config.py`: `Config.TIMEZONE = pytz.timezone('Asia/Kolkata')`
+- Two helper functions for consistent timestamp generation:
+  - `_now_str()` — Current timestamp with seconds: `YYYY-MM-DDTHH:MM:SS`
+  - `_now_minute_str()` — Current timestamp without seconds: `YYYY-MM-DDTHH:MM`
+
+**How to Know Server Timezone:**
+
+Check environment variable:
+```bash
+echo $TZ
+# Output: Asia/Kolkata (if set)
+```
+
+Check Python timezone (at runtime):
+```python
+from config import Config
+print(Config.TIMEZONE)  # Output: Asia/Kolkata
+```
+
+Check system timezone (on Windows):
+```powershell
+tzutil /g
+# Output: India Standard Time
+```
+
+Check system timezone (on Linux):
+```bash
+timedatectl
+# Output: Timezone: Asia/Kolkata (UTC+5:30)
+```
+
+**Implementation:**
+- Added `pytz` import to `config.py`
+- Added `_now_str()` and `_now_minute_str()` helper functions to `routes/user_management.py`
+- These helpers use `Config.TIMEZONE` for all new timestamps
+- Future: Replace all `datetime.now().strftime()` calls with `_now_str()` or `_now_minute_str()`
+
+**Files Modified:**
+- `config.py` — Added timezone configuration with IST as default
+- `routes/user_management.py` — Added timezone-aware datetime helper functions
+
+**Usage Example:**
+
+Instead of:
+```python
+filed_at = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+```
+
+Use:
+```python
+filed_at = _now_str()  # Returns timestamp in IST
+```
+
+**Testing:**
+- ✅ Server uses IST (Asia/Kolkata) timezone
+- ✅ All timestamps include timezone context (IST: UTC+5:30)
+- ✅ Consistent timestamp generation across all routes
+- ✅ No ambiguity when timestamps stored and retrieved
+
+---
 
 logconvo-project: htDash

@@ -1,24 +1,28 @@
 {
   "$schema_version": 1,
   "default_completion_rule": {
-    "not_before": ["activationDate", "enrollDate"],
+    "not_before": ["activationDate", "a0CompletionDate"],
     "not_after":  ["today"]
   },
   "default_scheduling_rule": {
     "not_before": ["today"]
   },
   "events": {
+    "informed_consent": {
+      "not_before": ["a0CompletionDate"],
+      "not_after":  ["today"]
+    },
     "exp_device_install": {
-      "not_before": ["enrollDate"],
+      "not_before": ["a0CompletionDate", "event:informed_consent"],
       "not_after":  ["enrollDate + 5d", "today"]
     },
     "activation": {
       "experimental": {
-        "not_before": ["enrollDate", "event:exp_device_install"],
+        "not_before": ["a0CompletionDate", "event:informed_consent", "event:exp_device_install"],
         "not_after":  ["enrollDate + 5d", "today"]
       },
       "control": {
-        "not_before": ["enrollDate"],
+        "not_before": ["a0CompletionDate", "event:informed_consent"],
         "not_after":  ["enrollDate + 5d", "today"]
       }
     },
@@ -40,6 +44,10 @@
     },
     "a2_assessment": {
       "not_before": ["event:a1_assessment"],
+      "not_after":  ["today"]
+    },
+    "watch_record": {
+      "not_before": ["a0CompletionDate"],
       "not_after":  ["today"]
     },
     "adverse_event_followup": {

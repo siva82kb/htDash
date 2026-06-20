@@ -61,6 +61,24 @@ def _filer():
     return flask_session.get('loginid', 'unknown')
 
 
+def _now_str():
+    """Get current timestamp in server timezone (IST) as ISO 8601 string with seconds.
+    Format: YYYY-MM-DDTHH:MM:SS"""
+    from pytz import timezone
+    tz = Config.TIMEZONE
+    now = datetime.now(tz)
+    return now.strftime('%Y-%m-%dT%H:%M:%S')
+
+
+def _now_minute_str():
+    """Get current timestamp in server timezone (IST) as ISO 8601 string without seconds.
+    Format: YYYY-MM-DDTHH:MM"""
+    from pytz import timezone
+    tz = Config.TIMEZONE
+    now = datetime.now(tz)
+    return now.strftime('%Y-%m-%dT%H:%M')
+
+
 def _apply_event_notes_count(items, priv):
     """Stamp role-filtered `event_notes_count` on each item and strip the raw
     `event_notes` field so its content never leaves this endpoint.
@@ -480,6 +498,11 @@ def api_patient_events(homer_id):
                 patient.get('brokenProtocolDate') or
                 patient.get('discontinuationDate')
             ))
+            # Seed schedule_a1_call if:
+            # - appointment_date is null (not scheduled OR cancelled)
+            # - Training has ended (D29 filed, broken protocol, or discontinued)
+            # - Window is open
+            # - Within 7 days of window start
             if (_a1_inc and _a1_inc.get('appointment_date') is None
                     and _a1_training_ended and _a1_window_open and _a1_window_leadtime
                     and _a1_seed_date):
@@ -488,7 +511,7 @@ def api_patient_events(homer_id):
                     'protocol_event_id': 'schedule_a1_call',
                     'scheduled_date':    [_a1_seed_date, _a1_seed_date],
                     'filed_at':          _filed_at,
-                    'filed_by':   _filer(),
+                    'filed_by':          _filer(),
                 })
                 _dirty = True
 
@@ -745,13 +768,75 @@ def api_patient_events(homer_id):
         'device_return',
         'watch_data_upload',
     })
-    is_paused        = bool(patient and patient.get('trainingPausedDate'))
-    is_discontinued  = bool(patient and patient.get('discontinuationDate'))
-    is_post_training = bool(patient and derive_status(patient) == 'post_training')
+    # For training_completed patients (D29 filed): only AE chains, assessments,
+    # device_return, and watch_data_upload are shown. All training events hidden.
+    _TRAINING_COMPLETED_VISIBLE = frozenset({
+        'adverse_event', 'adverse_event_followup',
+        'adverse_event_followup_visit', 'adverse_event_clinical_visit',
+        'a1_assessment', 'a2_assessment',
+        'schedule_a1_call', 'schedule_a2_call',
+        'device_return',
+        'watch_data_upload',
+    })
+    # After device_return is completed: only AE chains and assessments remain visible.
+    # Training is fully over, only post-training follow-ups shown.
+    _POST_DEVICE_RETURN_VISIBLE = frozenset({
+        'adverse_event', 'adverse_event_followup',
+        'adverse_event_followup_visit', 'adverse_event_clinical_visit',
+        'a1_assessment', 'a2_assessment',
+        'schedule_a1_call', 'schedule_a2_call',
+    })
+    is_paused           = bool(patient and patient.get('trainingPausedDate'))
+    is_discontinued     = bool(patient and patient.get('discontinuationDate'))
+    is_post_training    = bool(patient and derive_status(patient) == 'post_training')
+    is_training_completed = bool(patient and derive_status(patient) == 'training_completed')
+    is_a1_completed     = bool(patient and derive_status(patient) == 'a1_completed')
+    is_all_completed    = bool(patient and derive_status(patient) == 'all_completed')
+    # Check if device_return has been completed
+    is_device_return_completed = bool(
+        is_training_completed and
+        any(e.get('protocol_event_id') == 'device_return' for e in events_data.get('complete', []))
+    )
 
     _ASSESSMENT_PIDS = frozenset({'a1_assessment', 'a2_assessment'})
 
-    for entry in events_data.get('incomplete', []):
+    # Auto-miss A1/A2 assessments if their window has expired
+    incomplete_entries = events_data.get('incomplete', [])
+    for entry in incomplete_entries[:]:  # iterate over copy
+        pid = entry.get('protocol_event_id')
+        if pid in _ASSESSMENT_PIDS and pid in _assessment_windows:
+            try:
+                _ws_str, _we_str = _assessment_windows[pid]
+                end_date = datetime.fromisoformat(_we_str).date()
+                # If window has ended and assessment not yet completed, auto-mark as missed
+                if today > end_date and not entry.get('appointment_date'):
+                    filed_at = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                    missed_at = filed_at[:16]
+                    missed_entry = {
+                        **entry,
+                        'missed': True,
+                        'missed_at': missed_at,
+                        'filed_at': filed_at,
+                        'filed_by': _filer(),
+                    }
+                    events_data['complete'].append(missed_entry)
+                    incomplete_entries.remove(entry)
+                    # Set missed date on patient record
+                    if patient:
+                        if pid == 'a1_assessment':
+                            patient['a1MissedDate'] = missed_at
+                        elif pid == 'a2_assessment':
+                            patient['a2MissedDate'] = missed_at
+            except Exception:
+                pass
+
+    # Write back if any auto-missed entries
+    if len(incomplete_entries) < len(events_data.get('incomplete', [])):
+        write_protocol_events(folder, homer_id, events_data)
+        if patient:
+            write_patient(folder, homer_id, patient)
+
+    for entry in incomplete_entries:
         pid   = entry.get('protocol_event_id')
         sched = entry.get('scheduled_date')
 
@@ -783,6 +868,19 @@ def api_patient_events(homer_id):
                 except Exception:
                     pass
 
+        # A2 assessment completed (all_completed): no overdue events shown.
+        if is_all_completed:
+            continue
+
+        # After device_return completed or A1 assessment completed: only AE chains and assessments remain visible.
+        if (is_device_return_completed or is_a1_completed) and pid not in _POST_DEVICE_RETURN_VISIBLE:
+            continue
+
+        # For training_completed patients (D29 filed): only AE chains, assessments,
+        # device_return, watch_data_upload shown. All training events hidden.
+        if is_training_completed and not is_device_return_completed and pid not in _TRAINING_COMPLETED_VISIBLE:
+            continue
+
         # Discontinued patients: only AE follow-up chain + assessments shown.
         if is_discontinued and pid not in _DISCONTINUED_VISIBLE:
             continue
@@ -798,11 +896,21 @@ def api_patient_events(homer_id):
         on_hold = is_paused and pid not in _PAUSE_VISIBLE and start_date <= today
 
         # Compute blocked_by: depends_on entries that are applicable and not yet complete
+        # Special case: for a1_assessment/a2_assessment, dependency is satisfied if:
+        # - appointment_date is already set (via D29 or other path), OR
+        # - the scheduling call is completed
         dep_ids = event_defs.get(pid, {}).get('depends_on') or []
-        blocked_by = [
-            event_defs[d]['name'] for d in dep_ids
-            if d in known_ids and d not in completed_ids
-        ]
+        blocked_by = []
+        for d in dep_ids:
+            if d not in known_ids:
+                continue
+            # For assessments, check if appointment is scheduled or call is completed
+            if pid in ('a1_assessment', 'a2_assessment') and d in ('schedule_a1_call', 'schedule_a2_call'):
+                if entry.get('appointment_date') or d in completed_ids:
+                    continue  # Dependency satisfied
+            elif d in completed_ids:
+                continue  # Dependency satisfied for all other events
+            blocked_by.append(event_defs[d]['name'])
 
         if pid in _AE_FOLLOWUP_LABELS:
             ae_ids  = entry.get('adverse_event_ids') or []
@@ -1030,6 +1138,63 @@ def api_available_agwatches(homer_id):
         'current_right': current_watch(patient.get('agWatchRightID')),
         'current_left':  current_watch(patient.get('agWatchLeftID')),
     })
+
+
+@bp.route('/api/patients/<homer_id>/complete-event/informed-consent', methods=['POST'])
+def api_complete_informed_consent(homer_id):
+    """Complete the informed_consent protocol event."""
+    if not flask_session.get('login_place'):
+        return jsonify({'error': 'Not authenticated'}), 401
+
+    folder = find_patient_folder(flask_session['login_place'], homer_id)
+    if not folder:
+        return jsonify({'error': 'Patient not found'}), 404
+
+    # Check if patient is discontinued
+    patient = read_patient_meta(folder, homer_id)
+    if patient and patient.get('discontinuationDate'):
+        return jsonify({'error': 'Patient is discontinued. No further changes are allowed.'}), 403
+
+    data = request.get_json() or {}
+    event_id   = data.get('event_id')
+    event_date = data.get('consentDate', '').strip()
+    if r := _bad_date(patient, event_date, event_id='informed_consent'): return r
+    notes      = data.get('notes', '').strip()
+
+    if not event_date:
+        return jsonify({'error': 'Consent date is required.'}), 400
+
+    events_data = read_protocol_events(folder, homer_id)
+    if not events_data:
+        return jsonify({'error': 'Protocol events not found.'}), 404
+
+    # Find the matching incomplete entry
+    incomplete = events_data.get('incomplete', [])
+    entry = next(
+        (e for e in incomplete
+         if e.get('protocol_event_id') == 'informed_consent'
+         and (event_id is None or e.get('id') == event_id)),
+        None
+    )
+    if not entry:
+        return jsonify({'error': 'Event not found in incomplete list.'}), 404
+
+    filed_at = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+    complete_entry = {
+        **entry,
+        'completion_date': event_date,
+        'filed_at':        filed_at,
+        'filed_by':        _filer(),
+        'notes':           notes,
+        'attachment':      None,  # Will be set by upload-attachment endpoint
+    }
+
+    events_data['incomplete'] = [e for e in incomplete if e.get('id') != entry['id']]
+    events_data.setdefault('complete', []).append(complete_entry)
+
+    write_protocol_events(folder, homer_id, events_data)
+
+    return jsonify({'success': True, 'id': complete_entry['id']}), 200
 
 
 @bp.route('/api/patients/<homer_id>/complete-event/exp_device_install', methods=['POST'])
@@ -1993,6 +2158,7 @@ def api_log_activation_attempt(homer_id):
 
 
 _PRINTOUT_PDF_FILES = {
+    'informed_consent': 'attachments/informed_consent.pdf',
     'prescription_printout_d01': 'attachments/prescription_d01.pdf',
     'prescription_printout_d15': 'attachments/prescription_d15.pdf',
 }
@@ -5751,12 +5917,14 @@ def api_complete_agwatch_timing(homer_id):
     timing_rel = cfg['timing_file']
     filed_at  = datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
     loginid   = flask_session.get('loginid', 'unknown')
+
     timing_content = {
         'filed_at':  filed_at,
         'filed_by':  loginid,
         'timings':   [
             {
                 'exercise_id': t.get('exercise_id'),
+                'type':        'adl' if (t.get('exercise_id') or '').startswith('adl') else 'vcg',
                 'start':       (t.get('start') or '').strip() or None,
                 'end':         (t.get('end')   or '').strip() or None,
                 'notes':       (t.get('notes') or '').strip(),
@@ -5823,10 +5991,8 @@ def api_upload_attachment(homer_id):
         return jsonify({'error': 'No file provided'}), 400
     if not pdf_file.filename.lower().endswith('.pdf'):
         return jsonify({'error': 'Attachment must be a PDF file'}), 400
-    if not caption:
-        return jsonify({'error': 'Caption is required'}), 400
 
-    # Find event — search complete list first, then all free arrays
+    # Find event first to determine if caption is required
     events_data = read_protocol_events(folder, homer_id)
     if not events_data:
         return jsonify({'error': 'Protocol events not found'}), 404
@@ -5843,9 +6009,13 @@ def api_upload_attachment(homer_id):
                     break
     if not entry:
         return jsonify({'error': 'Event not found'}), 404
-    
-    # Use predefined filename based on protocol_event_id
+
+    # Caption is required for most events, but optional for informed_consent
     protocol_event_id = entry.get('protocol_event_id', '')
+    if protocol_event_id != 'informed_consent' and not caption:
+        return jsonify({'error': 'Caption is required'}), 400
+
+    # Use predefined filename based on protocol_event_id
     pdf_path_mapping = _PRINTOUT_PDF_FILES.get(protocol_event_id, 'prescription_attachment.pdf')
 
 #     # Save PDF as attachments/<event_id>.pdf
@@ -6558,6 +6728,92 @@ def api_cancel_assessment_appointment(homer_id):
     session_id = flask_session.get('session_id', 0)
     write_patient_log(folder, homer_id, loginid, session_id,
                       f'{assessment_type.upper()} assessment appointment cancelled')
+    return jsonify({'ok': True})
+
+
+@bp.route('/api/patients/<homer_id>/reschedule-assessment-appointment', methods=['POST'])
+def api_reschedule_assessment_appointment(homer_id):
+    """Reschedule a scheduled a1_assessment or a2_assessment appointment.
+
+    Updates appointment_date to the new date and logs the change.
+    """
+    if not flask_session.get('login_place'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    if flask_session.get('privilege') not in ('admin', 'therapist'):
+        return jsonify({'error': 'Forbidden'}), 403
+
+    folder = find_patient_folder(flask_session['login_place'], homer_id)
+    if not folder:
+        return jsonify({'error': 'Patient not found'}), 404
+
+    body                  = request.get_json() or {}
+    assessment_type       = (body.get('assessment_type') or '').strip()
+    event_id              = (body.get('event_id') or '').strip()
+    new_appointment_date  = (body.get('new_appointment_date') or '').strip()
+    reason                = (body.get('reason') or '').strip()
+
+    if assessment_type not in ('a1', 'a2'):
+        return jsonify({'error': 'assessment_type must be a1 or a2'}), 400
+    if not new_appointment_date:
+        return jsonify({'error': 'New appointment date is required.'}), 400
+    if not reason:
+        return jsonify({'error': 'Rescheduling reason is required.'}), 400
+
+    # Validate new date format
+    try:
+        new_dt = datetime.strptime(new_appointment_date, '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'error': 'New appointment date must be in YYYY-MM-DD format.'}), 400
+
+    pid = f'{assessment_type}_assessment'
+    events_data = read_protocol_events(folder, homer_id)
+    if not events_data:
+        return jsonify({'error': 'Protocol events not found.'}), 404
+
+    stub = next(
+        (e for e in events_data.get('incomplete', [])
+         if e.get('protocol_event_id') == pid
+         and (not event_id or e.get('id') == event_id)),
+        None
+    )
+    if not stub:
+        return jsonify({'error': f'{pid} not found in incomplete.'}), 404
+
+    old_appt_date = stub.get('appointment_date')
+    if not old_appt_date:
+        return jsonify({'error': 'No scheduled appointment to reschedule.'}), 400
+
+    # Validate new date is within the protocol window
+    win = stub.get('window_start') and stub.get('window_end')
+    if win:
+        try:
+            win_start = datetime.strptime(stub['window_start'][:10], '%Y-%m-%d')
+            win_end   = datetime.strptime(stub['window_end'][:10], '%Y-%m-%d')
+            if new_dt < win_start or new_dt > win_end:
+                return jsonify({
+                    'error': f'New appointment date must be within the {assessment_type.upper()} window '
+                            f'({stub["window_start"][:10]} to {stub["window_end"][:10]}).'
+                }), 400
+        except ValueError:
+            pass
+
+    # Log the reschedule action
+    stub.setdefault('appointment_reschedules', []).append({
+        'rescheduled_at': datetime.now().strftime('%Y-%m-%dT%H:%M'),
+        'from_date':      old_appt_date,
+        'to_date':        new_appointment_date + 'T09:00',
+        'reason':         reason,
+    })
+
+    # Update appointment_date to new date + 09:00
+    stub['appointment_date'] = new_appointment_date + 'T09:00'
+
+    write_protocol_events(folder, homer_id, events_data)
+
+    loginid    = flask_session.get('loginid', 'unknown')
+    session_id = flask_session.get('session_id', 0)
+    write_patient_log(folder, homer_id, loginid, session_id,
+                      f'{assessment_type.upper()} assessment appointment rescheduled to {new_appointment_date}')
     return jsonify({'ok': True})
 
 
@@ -8598,6 +8854,8 @@ def _get_field_labels(language: str) -> dict:
             'description': 'Description',
             'dosage': 'Dosage',
             'items': 'Items Needed',
+            'repetitions': 'repetitions',
+            'sets': 'sets',
             'adl_section': 'Activities of Daily Living (ADL)',
             'vcg_section': 'Virtual Center of Gravity (VCG)',
             'scan_video': 'Scan for Video',
@@ -8607,6 +8865,8 @@ def _get_field_labels(language: str) -> dict:
             'description': 'விளக்கம்',
             'dosage': 'தீவிரம்',
             'items': 'தேவையான பொருட்கள்',
+            'repetitions': 'மறுநிகழ்வுகள்',
+            'sets': 'தொகுப்புகள்',
             'adl_section': 'நாளாந்த வாழ்க்கை நடவடிக்கைகள் (ADL)',
             'vcg_section': 'மெய்ம் ஈர்ப்பு மையம் (VCG)',
             'scan_video': 'வீடியோவுக்கு ஸ்கேன் செய்யவும்',
@@ -8616,6 +8876,8 @@ def _get_field_labels(language: str) -> dict:
             'description': 'వివరణ',
             'dosage': 'మోతాదు',
             'items': 'అవసరమైన వస్తువులు',
+            'repetitions': 'పూనుకోవటాలు',
+            'sets': 'సెట్లు',
             'adl_section': 'రోజువారీ జీవన కార్యకలాపాలు (ADL)',
             'vcg_section': 'వర్చువల్ గురుత్వాకర్షణ కేంద్రం (VCG)',
             'scan_video': 'వీడియో కోసం స్కాన్ చేయండి',
@@ -8625,6 +8887,8 @@ def _get_field_labels(language: str) -> dict:
             'description': 'ವಿವರಣೆ',
             'dosage': 'ಮಾತ್ರೆ',
             'items': 'ಬೇಕಾದ ವಸ್ತುಗಳು',
+            'repetitions': 'ಪುನರಾವರ್ತನೆಗಳು',
+            'sets': 'ಸೆಟ್‌ಗಳು',
             'adl_section': 'ದೈನಂದಿನ ಜೀವನ ಚಟುವಟಿಕೆಗಳು (ADL)',
             'vcg_section': 'ವರ್ಚುವಲ್ ಗುರುತ್ವಾಕರ್ಷಣ ಕೇಂದ್ರ (VCG)',
             'scan_video': 'ವೀಡಿಯೋಗಾಗಿ ಸ್ಕ್ಯಾನ್ ಮಾಡಿ',
@@ -8634,6 +8898,8 @@ def _get_field_labels(language: str) -> dict:
             'description': 'विवरण',
             'dosage': 'खुराक',
             'items': 'आवश्यक वस्तुएं',
+            'repetitions': 'दोहराव',
+            'sets': 'सेट',
             'adl_section': 'दैनिक जीवन कार्यकलाप (ADL)',
             'vcg_section': 'वर्चुअल गुरुत्व केंद्र (VCG)',
             'scan_video': 'वीडियो के लिए स्कैन करें',
@@ -8643,6 +8909,8 @@ def _get_field_labels(language: str) -> dict:
             'description': 'ਵਰਣਨ',
             'dosage': 'ਖੁਰਾਕ',
             'items': 'ਲੋੜੀਂਦੀਆਂ ਵਸਤੂਆਂ',
+            'repetitions': 'ਦੋਹਾਸ',
+            'sets': 'ਸੈਟ',
             'adl_section': 'ਰੋਜ਼ਾਨਾ ਜੀਵਨ ਦੀਆਂ ਗਤੀਵਿਧੀਆਂ (ADL)',
             'vcg_section': 'ਵਰਚੁਅਲ ਗੁਰੁਤਾ ਕੇਂਦਰ (VCG)',
             'scan_video': 'ਵੀਡੀਓ ਲਈ ਸਕੈਨ ਕਰੋ',
@@ -8668,6 +8936,27 @@ def _get_exercise_text(exercise: dict, language: str) -> dict:
         'dosage':      lang_block.get('dosage')      or exercise.get('dosage', ''),
         'items':       lang_block.get('items')       or exercise.get('items', ''),
     }
+
+
+def _build_dosage_from_prescription(prescribed: dict, labels: dict) -> str:
+    """Build a dosage string from actual prescription values (repetitions and sets/blocks).
+
+    Returns a string like "10 repetitions, 3 sets" using language-specific labels.
+    If values are missing, returns empty string.
+    """
+    reps = prescribed.get('repetitions')
+    sets = prescribed.get('blocks')  # blocks are displayed as "sets"
+
+    if reps is None and sets is None:
+        return ''
+
+    parts = []
+    if reps is not None:
+        parts.append(f"{reps} {labels.get('repetitions', 'repetitions')}")
+    if sets is not None:
+        parts.append(f"{sets} {labels.get('sets', 'sets')}")
+
+    return ', '.join(parts)
 
 
 @bp.route('/api/patients/<homer_id>/prescription-pamphlet', methods=['GET'])
@@ -8713,6 +9002,8 @@ def api_prescription_pamphlet(homer_id):
     if not day_match:
         day_match = 'd01'  # Default to d01 if not found
 
+    labels = _get_field_labels(language)
+
     # Read ADL prescription
     adl_exercises_list = []
     adl_rel_path = f'adl/adl_prescription_{day_match}.json'
@@ -8726,10 +9017,12 @@ def api_prescription_pamphlet(homer_id):
                 text = _get_exercise_text(ex, language)
                 qr = _make_qr_b64(ex.get('youtube_url', ''))
                 screenshot = _make_screenshot_b64(ex_id)
+                # Use actual prescribed dosage instead of config static dosage
+                dosage = _build_dosage_from_prescription(presc, labels) or text['dosage']
                 adl_exercises_list.append({
                     'name': text['name'],
                     'description': text['description'],
-                    'dosage': text['dosage'],
+                    'dosage': dosage,
                     'items': text['items'],
                     'screenshot': screenshot,
                     'qr_code': qr,
@@ -8750,16 +9043,16 @@ def api_prescription_pamphlet(homer_id):
                 text = _get_exercise_text(ex, language)
                 qr = _make_qr_b64(ex.get('youtube_url', ''))
                 screenshot = _make_screenshot_b64(ex_id)
+                # Use actual prescribed dosage instead of config static dosage
+                dosage = _build_dosage_from_prescription(presc, labels) or text['dosage']
                 vcg_exercises_list.append({
                     'name': text['name'],
                     'description': text['description'],
-                    'dosage': text['dosage'],
+                    'dosage': dosage,
                     'items': text['items'],
                     'screenshot': screenshot,
                     'qr_code': qr,
                 })
-
-    labels = _get_field_labels(language)
 
     return render_template(
         'prescription_pamphlet.html',
@@ -8774,7 +9067,7 @@ def api_prescription_pamphlet(homer_id):
 
 @bp.route('/api/patients/<homer_id>/agwatch-timing/<protocol_event_id>', methods=['GET'])
 def api_get_agwatch_timing(homer_id, protocol_event_id):
-    """Return a saved agwatch timing file."""
+    """Return a saved agwatch timing file, or empty data if not yet saved."""
     if not flask_session.get('login_place'):
         return jsonify({'error': 'Not authenticated'}), 401
     cfg = _AGWATCH_TIMING_CONFIG.get(protocol_event_id)
@@ -8783,15 +9076,19 @@ def api_get_agwatch_timing(homer_id, protocol_event_id):
     folder = find_patient_folder(flask_session['login_place'], homer_id)
     if not folder:
         return jsonify({'error': 'Patient not found'}), 404
+
+    # Return empty timings if file doesn't exist yet
+    default_response = {'timings': []}
+
     if Config.USE_S3:
         from utils.s3_store import s3_read_json
         data = s3_read_json(f"{folder}/patients/{homer_id}/{cfg['timing_file']}")
-        if data is None:
-            return jsonify({'error': 'Timing file not found'}), 404
-        return jsonify(data)
+        return jsonify(data if data else default_response)
+
     path = get_patients_path(folder) / homer_id / cfg['timing_file']
     if not path.exists():
-        return jsonify({'error': 'Timing file not found'}), 404
+        return jsonify(default_response)
+
     with open(path, encoding='utf-8') as f:
         return jsonify(json.load(f))
 

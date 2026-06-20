@@ -364,22 +364,48 @@ def patient_activity(homer_id):
         if not place:
             return jsonify({"error": "Not authenticated"}), 401
 
+        place = place.lower()
         current_date = datetime.now().date()
         result = {}
 
-        for device_dir, device_key in [("Pluto", "pluto"), ("Mars", "mars")]:
-            config_file = os.path.join(Config.META_DATA_PATH, place, homer_id, device_dir, Config.CONFIG_DATA)
-            ext_file    = os.path.join(Config.META_DATA_PATH, place, homer_id, device_dir, "sessions", "extdata.csv")
-            dates_folder = os.path.join(Config.META_DATA_PATH, place, homer_id, device_dir, Config.DATES_FOLDER)
+        # Helper to read CSV from local META-DATA folder
+        def read_csv_file(local_path):
+            """Read CSV from local file."""
+            if not os.path.exists(local_path):
+                return None
+            try:
+                return pd.read_csv(local_path)
+            except Exception as e:
+                print(f"Error reading {local_path}: {e}")
+                return None
 
-            if not os.path.exists(config_file) or not os.path.exists(ext_file):
+        # Helper to list files in local folder
+        def list_folder_files(local_folder):
+            """List CSV files in a local folder."""
+            files = []
+            if os.path.exists(local_folder):
+                try:
+                    for fname in os.listdir(local_folder):
+                        if fname.endswith('.csv'):
+                            files.append(fname)
+                except Exception as e:
+                    print(f"Error listing {local_folder}: {e}")
+            return files
+
+        for device_dir, device_key in [("Pluto", "pluto"), ("Mars", "mars")]:
+            # Build local paths from META-DATA folder
+            config_file = os.path.join(Config.META_DATA_PATH, place, "patients", homer_id, device_dir, Config.CONFIG_DATA)
+            ext_file = os.path.join(Config.META_DATA_PATH, place, "patients", homer_id, device_dir, "sessions", "extdata.csv")
+            dates_folder = os.path.join(Config.META_DATA_PATH, place, "patients", homer_id, device_dir, Config.DATES_FOLDER)
+
+            # Read config and extdata from local
+            config_df = read_csv_file(config_file)
+            ext_df = read_csv_file(ext_file)
+
+            if config_df is None or ext_df is None or config_df.empty:
                 continue
 
             try:
-                config_df = pd.read_csv(config_file)
-                if config_df.empty:
-                    continue
-
                 start_date = pd.to_datetime(config_df["StartDate"].iloc[0], dayfirst=True, errors="coerce")
                 if pd.isna(start_date):
                     continue
@@ -387,7 +413,6 @@ def patient_activity(homer_id):
                 target = int(config_df["TotalTime"].iloc[-1]) if "TotalTime" in config_df.columns else 60
                 end_date = start_date + timedelta(days=29)
 
-                ext_df = pd.read_csv(ext_file)
                 ext_df["DateTime"] = pd.to_datetime(ext_df["DateTime"], dayfirst=True, errors="coerce")
                 ext_df = ext_df.dropna(subset=["DateTime"])
                 ext_df["Date"] = ext_df["DateTime"].dt.date
@@ -402,20 +427,18 @@ def patient_activity(homer_id):
 
                 # Dates that have a Dates/ CSV (for click drill-down)
                 dates_with_data = []
-                if os.path.exists(dates_folder):
-                    for fname in os.listdir(dates_folder):
-                        if fname.endswith(".csv"):
-                            try:
-                                dt = datetime.strptime(fname[:-4], "%d-%m-%Y")
-                                dates_with_data.append(dt.strftime("%Y-%m-%d"))
-                            except ValueError:
-                                pass
-                    print(f"[patient_activity] {homer_id}/{device_dir}: Found {len(dates_with_data)} dates with data files in {dates_folder}")
-                else:
-                    print(f"[patient_activity] {homer_id}/{device_dir}: Dates folder does not exist: {dates_folder}")
+                date_files = list_folder_files(dates_folder)
+                for fname in date_files:
+                    if fname.endswith(".csv"):
+                        try:
+                            dt = datetime.strptime(fname[:-4], "%d-%m-%Y")
+                            dates_with_data.append(dt.strftime("%Y-%m-%d"))
+                        except ValueError:
+                            pass
+                print(f"[patient_activity] {homer_id}/{device_dir}: Found {len(dates_with_data)} dates with data files")
 
                 # Config details — prescribed mechanism times
-                mechanisms = Config.PLUTO_MECHANISMS if device_dir == "Pluto" else Config.MARS_MECHANISMS
+                mechanisms = Config.PLUTO_MECHANISMS if device_key == "pluto" else Config.MARS_MECHANISMS
                 prescribed = {}
                 for m in mechanisms:
                     if m in config_df.columns:
@@ -470,11 +493,12 @@ def patient_activity_date(homer_id, date, device):
         if not place:
             return jsonify({"error": "Not authenticated"}), 401
 
+        place = place.lower()
         device_lower = device.lower()
         if device_lower not in ("pluto", "mars"):
             return jsonify({"error": "Invalid device"}), 400
 
-        device_dir    = "Pluto" if device_lower == "pluto" else "Mars"
+        device_cap = "Pluto" if device_lower == "pluto" else "Mars"
         mechanism_col = "Mechanism" if device_lower == "pluto" else "Movement"
         static_mechs  = Config.PLUTO_MECHANISMS if device_lower == "pluto" else Config.MARS_MECHANISMS
 
@@ -485,11 +509,20 @@ def patient_activity_date(homer_id, date, device):
         except ValueError:
             return jsonify({"error": "Invalid date format"}), 400
 
-        date_file = os.path.join(Config.META_DATA_PATH, place, homer_id, device_dir, Config.DATES_FOLDER, filename)
-        if not os.path.exists(date_file):
+        # Build local path
+        date_file = os.path.join(Config.META_DATA_PATH, place, "patients", homer_id, device_cap, Config.DATES_FOLDER, filename)
+
+        # Read date file from local
+        df = None
+        if os.path.exists(date_file):
+            try:
+                df = pd.read_csv(date_file)
+            except Exception as e:
+                print(f"Error reading {date_file}: {e}")
+
+        if df is None:
             return jsonify({"error": "No data for this date"}), 404
 
-        df = pd.read_csv(date_file)
         if mechanism_col not in df.columns or "GameDuration" not in df.columns:
             return jsonify({"error": "Unexpected file format"}), 500
 
@@ -497,15 +530,19 @@ def patient_activity_date(homer_id, date, device):
         durations = [round(float(grouped.get(m, 0)), 2) for m in static_mechs]
 
         # Target from config
-        config_file = os.path.join(Config.META_DATA_PATH, place, homer_id, device_dir, Config.CONFIG_DATA)
-        targets = []
+        config_file = os.path.join(Config.META_DATA_PATH, place, "patients", homer_id, device_cap, Config.CONFIG_DATA)
+
+        cfg = None
         if os.path.exists(config_file):
             try:
                 cfg = pd.read_csv(config_file)
-                for m in static_mechs:
-                    targets.append(int(cfg[m].iloc[-1]) if m in cfg.columns else 0)
-            except Exception:
-                targets = [0] * len(static_mechs)
+            except Exception as e:
+                print(f"Error reading {config_file}: {e}")
+
+        targets = []
+        if cfg is not None:
+            for m in static_mechs:
+                targets.append(int(cfg[m].iloc[-1]) if m in cfg.columns else 0)
         else:
             targets = [0] * len(static_mechs)
 
